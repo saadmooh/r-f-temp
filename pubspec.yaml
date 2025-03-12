@@ -1,0 +1,53 @@
+name: reminder
+description: A new Flutter project.
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  http: ^1.2.2
+  share_plus: ^10.0.2
+  url_launcher: ^6.3.0
+  universal_io: ^2.2.0
+  google_sign_in: ^6.3.0
+  flutter_secure_storage: ^9.2.4
+  cached_network_image: ^3.3.1
+
+  flutter_html: ^3.0.0-beta.2
+  flutter_local_notifications: ^17.2.3
+  timezone: ^0.9.4
+  receive_sharing_intent: ^1.8.1
+  permission_handler: ^11.3.1
+  intl: ^0.19.0  # Downgraded to match Flutter's pinned version
+  awesome_notifications: ^0.10.1
+  table_calendar: ^3.1.2
+  shared_preferences: ^2.5.2
+  fl_chart: ^0.68.0
+  flutter_inappwebview: ^6.1.5
+  provider: ^6.0.0
+
+  flutter_localizations:
+    sdk: flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+dependency_overrides:
+  intl: ^0.20.0
+flutter:
+  assets: 
+    - assets/logo.png
+  uses-material-design: true #  Make sure this is present
+
+  fonts:
+    - family: arial  #  Replace with your font family name
+      fonts:
+        - asset: assets/fonts/ARIAL.ttf  # Correct path to your font file
+          weight: 400  
+        
+     

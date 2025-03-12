@@ -1,0 +1,24 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        // لا تحتاج إلى classpath هنا بعد الآن
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            jvmTarget = '11'
+        }
+    }
+}
+
+rootProject.buildDir = '../build'
