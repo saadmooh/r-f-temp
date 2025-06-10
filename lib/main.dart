@@ -1,26 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
-import 'package:reminder/pages/auth_screen.dart';
-import 'package:reminder/pages/reminders_screen.dart';
-import 'package:reminder/pages/reminder_detail_screen.dart';
-import 'package:reminder/pages/settings_screen.dart';
-import 'package:reminder/pages/time_slots_screen.dart';
-import 'package:reminder/pages/save_post_screen.dart';
-import 'package:reminder/pages/stats_screen.dart';
-import 'package:reminder/pages/splash_screen.dart';
-import 'package:reminder/pages/user_profile_screen.dart';
-import 'package:reminder/pages/subscription_management_screen.dart';
-import 'package:reminder/globals.dart';
-import 'package:reminder/utils/language_manager.dart';
-import 'package:reminder/l10n/app_localizations.dart';
+import 'package:flex_reminder/pages/auth_screen.dart';
+import 'package:flex_reminder/pages/reminders_screen.dart';
+import 'package:flex_reminder/pages/reminder_detail_screen.dart';
+//import 'package:flex_reminder/pages/settings_screen.dart';
+import 'package:flex_reminder/pages/time_slots_screen.dart';
+import 'package:flex_reminder/pages/save_post_screen.dart';
+import 'package:flex_reminder/pages/stats_screen.dart';
+import 'package:flex_reminder/pages/splash_screen.dart';
+import 'package:flex_reminder/globals.dart';
+import 'package:flex_reminder/utils/language_manager.dart';
+import 'package:flex_reminder/l10n/app_localizations.dart';
+import 'package:flex_reminder/pages/reset_password_screen.dart';
+import 'package:flex_reminder/pages/subscription_management_screen.dart';
+import 'package:flex_reminder/pages/email_verification_screen.dart';
+import 'package:flex_reminder/providers/auth_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => LanguageManager(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => LanguageManager()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+      ],
       child: const MyApp(),
     ),
   );
@@ -37,6 +42,7 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           title: AppLocalizations.of(context)?.appTitle ?? 'Reminder App',
           navigatorKey: navigatorKey,
+          scaffoldMessengerKey: scaffoldMessengerKey,
           theme: ThemeData(
             brightness: Brightness.dark,
             primarySwatch: Colors.blue,
@@ -88,6 +94,7 @@ class MyApp extends StatelessWidget {
           supportedLocales: const [
             Locale('en', ''),
             Locale('ar', ''),
+            Locale('zh', ''), // إضافة دعم اللغة الصينية
           ],
           locale: languageManager.locale,
           localeResolutionCallback: (locale, supportedLocales) {
@@ -101,26 +108,23 @@ class MyApp extends StatelessWidget {
             }
             return supportedLocales.first;
           },
+          initialRoute: '/',
           routes: {
             '/': (context) => const SplashScreen(),
             '/auth': (context) => AuthScreen(),
             '/reminders': (context) => RemindersScreen(),
+            '/home': (context) => RemindersScreen(),
             '/reminder': (context) => ReminderDetailScreen(),
-            '/settings': (context) => SettingsScreen(),
+            //   '/settings': (context) => SettingsScreen(),
             '/time_slots': (context) => const TimeSlotsScreen(),
             '/save-post': (context) => const SavePostScreen(),
             '/stats': (context) => const StatsScreen(),
-            '/user_profile': (context) => const UserProfileScreen(),
+            //'/user_profile': (context) => const UserProfileScreen(),
+            '/reset-password': (context) => const ResetPasswordScreen(),
+            '/email-verification': (context) =>
+                EmailVerificationScreen(email: ''),
             '/subscription_management': (context) =>
                 const SubscriptionManagementScreen(),
-          },
-          onUnknownRoute: (settings) {
-            print('Unknown route accessed: ${settings.name}');
-            return MaterialPageRoute(
-              builder: (context) => Scaffold(
-                body: Center(child: Text('Route not found: ${settings.name}')),
-              ),
-            );
           },
         );
       },

@@ -3,67 +3,70 @@ import 'package:flutter/material.dart';
 import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:reminder/services/api_service.dart';
-import 'package:reminder/models/reminder.dart';
-import 'package:reminder/globals.dart'; // استيراد المفتاح العالمي للتنقل (navigatorKey)
+import 'package:flex_reminder/services/api_service.dart';
+import 'package:flex_reminder/models/reminder.dart';
+import 'package:flex_reminder/globals.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
-/// كلاس لإدارة الإشعارات في التطبيق
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
-  static bool _permissionsGranted = false; // متغير ثابت لتخزين حالة الأذونات
 
   factory NotificationService() => _instance;
 
   NotificationService._internal();
 
-  /// تهيئة خدمة الإشعارات
-  Future<void> init() async {
-    // تهيئة المناطق الزمنية
-    tz.initializeTimeZones();
+  final Map<int, Timer> _pendingTimers = {};
+  final Map<int, Timer> _checkTimers = {}; // للفحص الخفي
+  final Map<int, int> _attemptCounters = {}; // عداد المحاولات
 
-    // تهيئة مكتبة awesome_notifications مع قنوات الإشعارات
+  void _showSnackBar(String message, Color backgroundColor) {
+    if (navigatorKey.currentContext != null) {
+      final scaffoldMessenger =
+          ScaffoldMessenger.of(navigatorKey.currentContext!);
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: backgroundColor,
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      );
+    } else {
+      print('التطبيق غير نشط، تم تجاهل SnackBar: $message');
+    }
+  }
+
+  Future<void> init() async {
+    tz.initializeTimeZones();
     await AwesomeNotifications().initialize(
-      'resource://drawable/notification', // أيقونة الإشعار الافتراضية
+      'resource://drawable/notification',
       [
         NotificationChannel(
           channelKey: 'scheduled_channel',
-          channelName: 'Scheduled Notifications',
-          channelDescription: 'قناة لإشعارات التذكيرات المجدولة',
+          channelName: 'الإشعارات المجدولة',
+          channelDescription: 'قناة للتذكيرات المجدولة',
           defaultColor: const Color(0xFF9D50DD),
           ledColor: Colors.white,
           importance: NotificationImportance.High,
           locked: true,
+          playSound: true,
+          soundSource: 'resource://raw/bell',
           defaultRingtoneType: DefaultRingtoneType.Notification,
         ),
-        NotificationChannel(
-          channelKey: 'check_channel',
-          channelName: 'Check Notifications',
-          channelDescription: 'قناة للتحقق من حالة التذكيرات',
-          importance: NotificationImportance.Low,
-          playSound: false,
-          enableVibration: false,
-          enableLights: false,
-          defaultColor: Colors.transparent,
-          ledColor: Colors.transparent,
-        ),
+        // تم حذف قناة الفحص - نستخدم المؤقتات الخفية بدلاً منها
       ],
     );
 
-    // التحقق من أذونات الإشعارات مرة واحدة وتخزين الحالة
-    _permissionsGranted = await AwesomeNotifications().isNotificationAllowed();
-    if (!_permissionsGranted) {
-      _permissionsGranted =
-          await AwesomeNotifications().requestPermissionToSendNotifications();
+    bool allowed = await AwesomeNotifications().isNotificationAllowed();
+    if (!allowed) {
+      await AwesomeNotifications().requestPermissionToSendNotifications();
     }
 
-    // التحقق من تهيئة navigatorKey
-    if (navigatorKey.currentState == null) {
-      print('تحذير: navigatorKey لم يتم تهيئته. قد لا يعمل SnackBar.');
-    }
-
-    // إعداد مستمعي الأحداث للإشعارات
     AwesomeNotifications().setListeners(
       onActionReceivedMethod: onNotificationActionReceived,
       onNotificationCreatedMethod: onNotificationCreated,
@@ -72,240 +75,256 @@ class NotificationService {
     );
   }
 
-  /// مستمع: تم إنشاء إشعار
   @pragma("vm:entry-point")
   static Future<void> onNotificationCreated(
       ReceivedNotification receivedNotification) async {
-    print('تم إنشاء إشعار: ${receivedNotification.toMap()}');
-    await _instance._logNotificationEvent(
-      'Created',
-      receivedNotification.id!,
-      receivedNotification.payload
-          ?.map((key, value) => MapEntry(key, value ?? '')),
-    );
+    print('📝 تم إنشاء الإشعار: ${receivedNotification.title}');
   }
 
-  /// مستمع: تم عرض إشعار
   @pragma("vm:entry-point")
   static Future<void> onNotificationDisplayed(
       ReceivedNotification receivedNotification) async {
-    print('تم عرض إشعار: ${receivedNotification.toMap()}');
-    await _instance._logNotificationEvent(
-      'Displayed',
-      receivedNotification.id!,
-      receivedNotification.payload
-          ?.map((key, value) => MapEntry(key, value ?? '')),
-    );
+    print(
+        '📱 تم عرض الإشعار: ${receivedNotification.title} في ${DateTime.now()}');
+
+    // لا نحتاج للتعامل مع إشعارات الفحص لأننا نستخدم المؤقتات الخفية
+    final payload = receivedNotification.payload ?? {};
+    final bool isCheckNotification = payload['isCheckNotification'] == 'true';
+
+    if (!isCheckNotification) {
+      print('🔔 إشعار تذكير رئيسي: ${receivedNotification.title}');
+    } else {
+      // هذا لن يحدث لأننا لا ننشئ إشعارات فحص بعد الآن
+      print('⚠️ إشعار فحص غير متوقع - سيتم تجاهله');
+    }
   }
 
-  /// مستمع: تم إلغاء إشعار
   @pragma("vm:entry-point")
   static Future<void> onDismissActionReceived(
       ReceivedAction receivedAction) async {
-    print('تم إلغاء إشعار: ${receivedAction.toMap()}');
-    await _instance._logNotificationEvent(
-      'Dismissed',
-      receivedAction.id!,
-      receivedAction.payload?.map((key, value) => MapEntry(key, value ?? '')),
-    );
+    print('❌ تم تجاهل الإشعار: ${receivedAction.title}');
   }
 
-  /// مستمع: تم التفاعل مع إشعار (مثل النقر عليه أو إشعار فحص)
   @pragma("vm:entry-point")
   static Future<void> onNotificationActionReceived(
       ReceivedAction receivedAction) async {
-    print('تم التفاعل مع إشعار: ${receivedAction.toMap()}');
+    print('👆 تم النقر على الإشعار: ${receivedAction.title}');
+    _instance._cancelTimerForNotification(receivedAction.id!);
 
-    // التحقق مما إذا كان هذا إشعار فحص لإعادة الجدولة
-    if (receivedAction.channelKey == 'check_channel') {
-      await _handleCheckNotification(receivedAction);
-      return;
-    }
+    final payload = receivedAction.payload ?? {};
+    final bool isCheckNotification = payload['isCheckNotification'] == 'true';
 
-    // التعامل مع إشعار تذكير عادي (المستخدم نقر على الإشعار)
-    final reminderId = receivedAction.payload?['id'] != null
-        ? int.parse(receivedAction.payload!['id']!)
-        : null;
-    if (reminderId != null) {
-      await _instance._cancelCheckNotificationsForReminder(reminderId);
-    }
+    if (!isCheckNotification) {
+      final Reminder reminder = Reminder(
+        id: receivedAction.id!,
+        userId: 0,
+        url: payload['url'] ?? '',
+        title: receivedAction.title ?? 'تذكير',
+        content: payload['content'] ?? '',
+        imageUrl: payload['imageUrl'] ?? '',
+        importance: payload['importance'] ?? '',
+        scheduledTimes: (payload['scheduledTimes'] as List<dynamic>?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            [],
+        nextReminderTime: payload['nextReminderTime'] ?? '',
+        isOpened: 1,
+        createdAt: payload['createdAt'] ?? '',
+        updatedAt: payload['updatedAt'] ?? '',
+        category: payload['category'] ?? '',
+        complexity: payload['complexity'] ?? '',
+        domain: payload['domain'] ?? '',
+      );
 
-    // تحليل scheduledTimes من الـ payload مع معالجة أخطاء محسنة
-    List<String> scheduledTimes = [];
-    if (receivedAction.payload?['scheduledTimes'] != null) {
       try {
-        final scheduledTimesJson = receivedAction.payload!['scheduledTimes']!;
-        final decoded = jsonDecode(scheduledTimesJson);
-        if (decoded is List) {
-          scheduledTimes = decoded.cast<String>();
-        } else {
-          print(
-              'تنسيق scheduledTimes غير صحيح: متوقع List، تم العثور على ${decoded.runtimeType}');
-          scheduledTimes = [''];
-        }
+        final fetchedReminder =
+            await ApiService().getReminderById(int.parse(payload['id']!));
+        navigatorKey.currentState?.pushNamed(
+          '/reminder',
+          arguments: fetchedReminder,
+        );
       } catch (e) {
-        print('خطأ أثناء تحليل scheduledTimes: $e');
-        scheduledTimes = [''];
+        print('خطأ في جلب تفاصيل التذكير: $e');
+        navigatorKey.currentState?.pushNamed('/reminder', arguments: reminder);
       }
     }
+  }
 
-    // إنشاء كائن Reminder من بيانات الإشعار
-    final reminder = Reminder(
-      id: receivedAction.id!,
-      userId: 0,
-      url: receivedAction.payload?['url'] ?? '',
-      title: receivedAction.title ?? 'تذكير',
-      content: receivedAction.payload?['content'] ?? '',
-      imageUrl: receivedAction.payload?['imageUrl'] ?? '',
-      importance: receivedAction.payload?['importance'] ?? '',
-      scheduledTimes: scheduledTimes,
-      nextReminderTime: receivedAction.payload?['nextReminderTime'] ?? '',
-      isOpened: 1,
-      createdAt: receivedAction.payload?['createdAt'] ?? '',
-      updatedAt: receivedAction.payload?['updatedAt'] ?? '',
-      category: receivedAction.payload?['category'] ?? '',
-      complexity: receivedAction.payload?['complexity'] ?? '',
-      domain: receivedAction.payload?['domain'] ?? '',
+  void _cancelTimerForNotification(int id) {
+    if (_pendingTimers.containsKey(id)) {
+      _pendingTimers[id]?.cancel();
+      _pendingTimers.remove(id);
+    }
+  }
+
+  // دالة رئيسية لجدولة التذكير مع فحص خفي
+  Future<void> scheduleReminderWithHiddenCheck({
+    required int reminderId,
+    required String title,
+    required String url,
+    required DateTime scheduledDate,
+    required String importance,
+    Map<String, String>? additionalPayload,
+  }) async {
+    print('🔧 جدولة التذكير $reminderId: $title للوقت: $scheduledDate');
+
+    // إلغاء أي تذكيرات وفحوصات سابقة
+    await cancelReminderNotifications(reminderId);
+
+    // إعداد البيانات المرفقة
+    final Map<String, String> payload = {
+      'id': reminderId.toString(),
+      'url': url,
+      'title': title,
+      'importance': importance,
+      'nextReminderTime': scheduledDate.toIso8601String(),
+      ...?additionalPayload,
+    };
+
+    // جدولة الإشعار الرئيسي (المرئي للمستخدم)
+    final bool scheduled = await scheduleReminderNotification(
+      title: title,
+      body: 'حان وقت التذكير!',
+      scheduledDate: scheduledDate,
+      channelKey: 'scheduled_channel',
+      summary: 'إشعار التذكير',
+      payload: payload,
     );
 
-    // تحديث حالة التذكير عبر API إذا كان هناك رابط متاح
-    if (reminder.url?.isNotEmpty ?? false) {
-      try {
-        await ApiService().updateStats(reminder.url!, true);
-      } catch (e) {
-        print('خطأ أثناء تحديث الحالة عبر API: $e');
-        _showSnackBar('فشل في تحديث حالة التذكير: $e');
-      }
-    }
+    if (scheduled) {
+      // جدولة فحص خفي بعد 6 ساعات من الإشعار الرئيسي
+      final Duration checkDelay = const Duration(hours: 6);
+      _scheduleHiddenCheck(
+        reminderId: reminderId,
+        checkTime: scheduledDate.add(checkDelay),
+        postUrl: url,
+        title: title,
+        importance: importance,
+        additionalPayload: additionalPayload,
+      );
 
-    // التنقل إلى شاشة تفاصيل التذكير باستخدام navigatorKey
-    try {
-      final navigatorState = navigatorKey.currentState;
-      if (navigatorState != null) {
-        await navigatorState.pushNamed('/reminder', arguments: reminder);
-        _showSnackBar('تم فتح التذكير بنجاح!');
-      } else {
-        print(
-            'خطأ: حالة Navigator فارغة. لا يمكن التنقل إلى ReminderDetailScreen.');
-      }
-    } catch (e) {
-      print('خطأ أثناء التنقل إلى ReminderDetailScreen: $e');
+      print(
+          '✅ تم جدولة التذكير $reminderId مع فحص خفي بعد ${checkDelay.inHours} ساعات');
+    } else {
+      print('❌ فشل في جدولة التذكير $reminderId');
     }
   }
 
-  /// التعامل مع إشعارات الفحص لإعادة جدولة التذكير إذا لم يتم فتحه بعد ساعة
-  static Future<void> _handleCheckNotification(
-      ReceivedAction receivedAction) async {
-    print('التعامل مع إشعار فحص: ${receivedAction.toMap()}');
+  // دالة الفحص الخفي (بدون إشعارات)
+  void _scheduleHiddenCheck({
+    required int reminderId,
+    required DateTime checkTime,
+    required String postUrl,
+    required String title,
+    required String importance,
+    Map<String, String>? additionalPayload,
+  }) {
+    // إلغاء أي فحص خفي سابق لنفس التذكير
+    _checkTimers[reminderId]?.cancel();
 
-    final postUrl = receivedAction.payload?['url'];
-    final importance = receivedAction.payload?['importance'] ?? 'day';
-    final reminderId = receivedAction.payload?['id'] != null
-        ? int.parse(receivedAction.payload!['id']!)
-        : null;
+    final Duration delay = checkTime.difference(DateTime.now());
 
-    if (postUrl == null || reminderId == null) {
-      print('خطأ: postUrl أو reminderId مفقود في بيانات إشعار الفحص.');
+    if (delay.isNegative) {
+      // إذا كان الوقت في الماضي، نفذ الفحص فوراً
+      print('⚡ وقت الفحص في الماضي، تنفيذ فوري للتذكير $reminderId');
+      _performBackgroundCheck(
+          reminderId, postUrl, title, importance, additionalPayload);
+      return;
+    }
+
+    // إنشاء مؤقت للفحص الخفي
+    _checkTimers[reminderId] = Timer(delay, () {
+      _performBackgroundCheck(
+          reminderId, postUrl, title, importance, additionalPayload);
+    });
+
+    print('⏰ تم جدولة فحص خفي للتذكير $reminderId في: $checkTime');
+    print(
+        '⏳ المدة المتبقية: ${delay.inHours} ساعة و ${delay.inMinutes % 60} دقيقة');
+  }
+
+  // تنفيذ الفحص في الخلفية (بدون إشعارات مرئية)
+  Future<void> _performBackgroundCheck(
+    int reminderId,
+    String postUrl,
+    String title,
+    String importance,
+    Map<String, String>? additionalPayload,
+  ) async {
+    print('🔍 بدء فحص خفي للتذكير $reminderId في: ${DateTime.now()}');
+
+    // التحقق من عدد المحاولات
+    final int attempts = _attemptCounters[reminderId] ?? 0;
+    print('📊 عدد المحاولات الحالي: $attempts من 5');
+
+    if (attempts >= 5) {
+      print(
+          '⛔ تم تجاوز الحد الأقصى للمحاولات للتذكير $reminderId - إيقاف نهائي');
+      await cancelReminderNotifications(reminderId);
       return;
     }
 
     try {
+      // فحص حالة التذكير من الخادم
+      print('🌐 جاري فحص حالة التذكير من الخادم...');
       final fetchedReminder = await ApiService().getReminder(postUrl);
-      if (fetchedReminder.isOpened == 0) {
-        await ApiService().updateStats(postUrl, false);
-        final String bestTimeStr =
-            await ApiService().reschedulePost(postUrl, importance);
-        final DateTime newScheduledDate =
-            tz.TZDateTime.parse(tz.getLocation('Africa/Algiers'), bestTimeStr);
 
-        List<String> scheduledTimes = [];
-        if (receivedAction.payload?['scheduledTimes'] != null) {
-          try {
-            final scheduledTimesJson =
-                receivedAction.payload!['scheduledTimes']!;
-            final decoded = jsonDecode(scheduledTimesJson);
-            if (decoded is List) {
-              scheduledTimes = decoded.cast<String>();
-            } else {
-              print(
-                  'تنسيق scheduledTimes غير صحيح في إشعار الفحص: متوقع List، تم العثور على ${decoded.runtimeType}');
-              scheduledTimes = [''];
-            }
-          } catch (e) {
-            print('خطأ أثناء تحليل scheduledTimes في إشعار الفحص: $e');
-            scheduledTimes = [''];
-          }
-        }
+      if (fetchedReminder.isOpened == 1) {
+        // ✅ تم فتح التذكير - إنهاء جميع العمليات
+        print('✅ تم فتح التذكير $reminderId بنجاح - إلغاء جميع العمليات');
+        await cancelReminderNotifications(reminderId);
 
-        await _instance.scheduleNotification(
-          title: receivedAction.payload?['title'] ?? 'تذكير',
-          body: 'حان وقت تذكيرك!',
-          scheduledDate: newScheduledDate,
-          channelKey: 'scheduled_channel',
-          summary: 'إشعار تذكير',
-          payload: {
-            'id': reminderId.toString(),
-            'url': postUrl,
-            'content': receivedAction.payload?['content'] ?? '',
-            'imageUrl': receivedAction.payload?['imageUrl'] ?? '',
-            'importance': importance,
-            'scheduledTimes': jsonEncode(scheduledTimes),
-            'nextReminderTime': newScheduledDate.toIso8601String(),
-            'createdAt': receivedAction.payload?['createdAt'] ?? '',
-            'updatedAt': receivedAction.payload?['updatedAt'] ?? '',
-            'category': receivedAction.payload?['category'] ?? '',
-            'complexity': receivedAction.payload?['complexity'] ?? '',
-            'domain': receivedAction.payload?['domain'] ?? '',
-          },
-          isPostNotification: true,
-        );
+        // يمكن إضافة إشعار نجاح خفيف هنا (اختياري)
+        // _showSnackBar('تم إنجاز التذكير: $title', Colors.green);
       } else {
-        print('التذكير تم فتحه بالفعل، لا حاجة لإعادة الجدولة.');
+        // ❌ لم يتم فتح التذكير - إعادة جدولة
+        print(
+            '❌ لم يتم فتح التذكير $reminderId بعد - المحاولة ${attempts + 1}');
+
+        // طلب إعادة جدولة من الخادم
+        print('🔄 جاري طلب إعادة جدولة من الخادم...');
+        final Map<String, dynamic> resMap =
+            await ApiService().reschedulePost(postUrl, importance);
+
+        final String newScheduledTimeStr = resMap['post']['next_reminder_time'];
+        final DateTime newScheduledDate = DateTime.parse(newScheduledTimeStr);
+
+        // زيادة عداد المحاولات
+        _attemptCounters[reminderId] = attempts + 1;
+
+        print('📅 موعد جديد للتذكير: $newScheduledDate');
+        print('🔢 عدد المحاولات الجديد: ${_attemptCounters[reminderId]}');
+
+        // إعادة جدولة التذكير مع الفحص الخفي
+        await scheduleReminderWithHiddenCheck(
+          reminderId: reminderId,
+          title: title,
+          url: postUrl,
+          scheduledDate: newScheduledDate,
+          importance: importance,
+          additionalPayload: additionalPayload,
+        );
+
+        print('🔄 تمت إعادة جدولة التذكير $reminderId بنجاح');
       }
     } catch (e) {
-      print('خطأ أثناء التحقق/إعادة جدولة الإشعار: $e');
-      _showSnackBar('فشل في معالجة التذكير: $e');
+      print('❌ خطأ في الفحص الخفي للتذكير $reminderId: $e');
+
+      // في حالة الخطأ، يمكن المحاولة مرة أخرى بعد فترة قصيرة
+      if (attempts < 3) {
+        print('🔁 إعادة محاولة الفحص بعد 30 دقيقة بسبب الخطأ');
+        _scheduleHiddenCheck(
+          reminderId: reminderId,
+          checkTime: DateTime.now().add(const Duration(minutes: 30)),
+          postUrl: postUrl,
+          title: title,
+          importance: importance,
+          additionalPayload: additionalPayload,
+        );
+      }
     }
   }
 
-  /// عرض رسالة SnackBar لإعلام المستخدم
-  static void _showSnackBar(String message) {
-    if (navigatorKey.currentContext != null &&
-        navigatorKey.currentState != null) {
-      ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(
-        SnackBar(
-          content: Text(message, style: TextStyle(color: Colors.white)),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 3),
-        ),
-      );
-    } else {
-      print('تحذير: لا يمكن عرض SnackBar - navigatorKey لم يتم تهيئته.');
-    }
-  }
-
-  /// إلغاء إشعارات الفحص المرتبطة بتذكير معين
-  Future<void> _cancelCheckNotificationsForReminder(int reminderId) async {
-    final notificationMap = await _getNotificationMap();
-    final checkNotificationIds = notificationMap[reminderId]
-            ?.where((id) => id.toString().startsWith('check_'))
-            .toList() ??
-        [];
-
-    for (final id in checkNotificationIds) {
-      await AwesomeNotifications().cancel(id);
-      await _logNotificationEvent('Canceled Check', id, null);
-    }
-
-    if (notificationMap.containsKey(reminderId)) {
-      notificationMap[reminderId] = notificationMap[reminderId]!
-          .where((id) => !id.toString().startsWith('check_'))
-          .toList();
-      await _saveNotificationMap(notificationMap);
-    }
-  }
-
-  /// جدولة إشعار تذكير أساسي (المنطق الأساسي للجدولة)
   Future<bool> scheduleReminderNotification({
     required String title,
     required String body,
@@ -313,39 +332,33 @@ class NotificationService {
     required String channelKey,
     String? summary,
     Map<String, String>? payload,
-    bool isCheckNotification = false,
   }) async {
     try {
-      final tz.TZDateTime tzScheduledDate =
-          tz.TZDateTime.from(scheduledDate, tz.local);
-      final int notificationId = isCheckNotification
-          ? int.parse('check_${createUniqueId()}')
-          : createUniqueId();
+      final int notificationId = createUniqueId();
+      print('🆔 إنشاء إشعار بالمعرف: $notificationId');
+
       await AwesomeNotifications().createNotification(
         content: NotificationContent(
           id: notificationId,
           channelKey: channelKey,
-          title: isCheckNotification ? null : title,
-          body: isCheckNotification ? null : body,
-          summary: isCheckNotification ? null : summary,
-          wakeUpScreen: !isCheckNotification,
-          category: isCheckNotification
-              ? NotificationCategory.Service
-              : NotificationCategory.Reminder,
+          title: title,
+          body: body,
+          summary: summary,
+          wakeUpScreen: true,
+          category: NotificationCategory.Reminder,
           notificationLayout: NotificationLayout.Default,
           payload: payload,
-          displayOnForeground: !isCheckNotification,
-          displayOnBackground: !isCheckNotification,
         ),
         schedule: NotificationCalendar.fromDate(
-          date: tzScheduledDate,
+          date: scheduledDate,
           allowWhileIdle: true,
           preciseAlarm: true,
         ),
       );
 
-      print('تم جدولة إشعار لـ: $tzScheduledDate (ID: $notificationId)');
+      print('📅 تمت جدولة الإشعار لـ: $scheduledDate');
 
+      // حفظ معرف الإشعار في الخريطة
       if (payload != null && payload.containsKey('id')) {
         final reminderId = int.parse(payload['id']!);
         final notificationMap = await _getNotificationMap();
@@ -356,22 +369,13 @@ class NotificationService {
         await _saveNotificationMap(notificationMap);
       }
 
-      if (!isCheckNotification) {
-        _showSnackBar(
-            'تم جدولة التذكير بنجاح لـ ${tzScheduledDate.toLocal()}!');
-      }
-
-      await _logNotificationEvent('Scheduled', notificationId, payload);
-
       return true;
     } catch (e) {
-      print('خطأ أثناء جدولة الإشعار: $e');
-      _showSnackBar('فشل في جدولة الإشعار: $e');
+      print('❌ خطأ في جدولة الإشعار: $e');
       return false;
     }
   }
 
-  /// جدولة إشعار مع منطق التتبع
   Future<bool> scheduleNotification({
     required String title,
     required String body,
@@ -381,142 +385,168 @@ class NotificationService {
     Map<String, String>? payload,
     bool isPostNotification = false,
   }) async {
-    if (!_permissionsGranted) {
-      _showSnackBar('أذونات الإشعارات مرفوضة.');
-      return false;
-    }
-
     try {
-      final updatedPayload = Map<String, String>.from(payload ?? {});
-      if (!updatedPayload.containsKey('createdAt')) {
-        updatedPayload['createdAt'] = DateTime.now().toIso8601String();
-      }
-      if (!updatedPayload.containsKey('updatedAt')) {
-        updatedPayload['updatedAt'] = DateTime.now().toIso8601String();
-      }
-      if (!updatedPayload.containsKey('title')) {
-        updatedPayload['title'] = title;
-      }
-
       final DateTime finalScheduledDate =
           scheduledDate ?? DateTime.now().add(const Duration(seconds: 5));
-      await scheduleReminderNotification(
+      return await scheduleReminderNotification(
         title: title,
         body: body,
         scheduledDate: finalScheduledDate,
         channelKey: channelKey,
         summary: summary,
-        payload: updatedPayload,
+        payload: payload,
       );
-
-      if (isPostNotification && updatedPayload.containsKey('url')) {
-        final String postUrl = updatedPayload['url']!;
-        final String importance = updatedPayload['importance'] ?? 'day';
-
-        final delayDuration = const Duration(hours: 1);
-        final checkTime = finalScheduledDate.add(delayDuration);
-
-        await scheduleReminderNotification(
-          title: '',
-          body: '',
-          scheduledDate: checkTime,
-          channelKey: 'check_channel',
-          payload: updatedPayload,
-          isCheckNotification: true,
-        );
-      }
-
-      return true;
     } catch (e) {
-      print('خطأ أثناء جدولة الإشعار: $e');
-      _showSnackBar('فشل في جدولة الإشعار: $e');
+      print('❌ خطأ في جدولة الإشعار: $e');
       return false;
     }
   }
 
-  /// إنشاء معرف فريد للإشعارات
   int createUniqueId() {
     return DateTime.now().millisecondsSinceEpoch.remainder(100000);
   }
 
-  /// إلغاء جميع الإشعارات المرتبطة بتذكير معين
   Future<void> cancelReminderNotifications(int reminderId) async {
+    print('🗑️ إلغاء جميع العمليات للتذكير $reminderId');
+
+    // إلغاء الإشعارات المرئية
     final notificationMap = await _getNotificationMap();
     final notificationIds = notificationMap[reminderId] ?? [];
 
+    print('📱 إلغاء ${notificationIds.length} إشعار مرئي');
     for (final id in notificationIds) {
       await AwesomeNotifications().cancel(id);
-      await _logNotificationEvent('Canceled', id, null);
     }
 
+    // إلغاء المؤقتات الخفية
+    if (_checkTimers.containsKey(reminderId)) {
+      _checkTimers[reminderId]?.cancel();
+      _checkTimers.remove(reminderId);
+      print('⏰ تم إلغاء المؤقت الخفي');
+    }
+
+    // إزالة عداد المحاولات
+    if (_attemptCounters.containsKey(reminderId)) {
+      _attemptCounters.remove(reminderId);
+      print('🔢 تم مسح عداد المحاولات');
+    }
+
+    // تنظيف خريطة الإشعارات
     notificationMap.remove(reminderId);
     await _saveNotificationMap(notificationMap);
 
-    _showSnackBar('تم إلغاء إشعارات التذكير ID $reminderId بنجاح!');
-
-    await AwesomeNotifications().createNotification(
-      content: NotificationContent(
-        id: createUniqueId(),
-        channelKey: 'scheduled_channel',
-        title: 'تأكيد الإلغاء',
-        body: 'تم إلغاء التذكير ID $reminderId.',
-      ),
-    );
+    print('✅ تم إلغاء جميع العمليات للتذكير $reminderId بنجاح');
   }
 
-  /// تحديث أو جدولة إشعارات عند تحديث تذكير
-  Future<void> updateReminderNotifications(Reminder reminder) async {
-    await cancelReminderNotifications(reminder.id);
+  Future<void> updateReminderNotifications(
+      Map<String, dynamic> reminderData) async {
+    final reminderId = reminderData['id'] as int?;
+    if (reminderId == null) {
+      print('❌ لا يمكن تحديث الإشعارات: معرف التذكير مفقود');
+      return;
+    }
 
-    if (reminder.nextReminderTime != null &&
-        reminder.nextReminderTime!.isNotEmpty) {
-      await scheduleNotification(
-        title: reminder.title,
-        body: 'حان وقت تذكيرك!',
-        scheduledDate: DateTime.parse(reminder.nextReminderTime!),
-        channelKey: 'scheduled_channel',
-        summary: 'إشعار تذكير',
-        payload: {
-          'id': reminder.id.toString(),
-          'url': reminder.url ?? '',
-          'content': reminder.content ?? '',
-          'imageUrl': reminder.imageUrl ?? '',
-          'importance': reminder.importance ?? '',
-          'scheduledTimes': jsonEncode(reminder.scheduledTimes),
-          'nextReminderTime': reminder.nextReminderTime ?? '',
-          'createdAt': reminder.createdAt ?? '',
-          'updatedAt': reminder.updatedAt ?? '',
-          'category': reminder.category ?? '',
-          'complexity': reminder.complexity ?? '',
-          'domain': reminder.domain ?? '',
+    print('🔄 تحديث إشعارات التذكير $reminderId');
+
+    final nextReminderTimeStr = reminderData['next_reminder_time'] as String?;
+    if (nextReminderTimeStr != null && nextReminderTimeStr.isNotEmpty) {
+      final scheduledDate = DateTime.parse(nextReminderTimeStr);
+
+      if (scheduledDate.isBefore(DateTime.now())) {
+        print('⚠️ وقت الإشعار في الماضي، لن يتم جدولته: $nextReminderTimeStr');
+        return;
+      }
+
+      final title = reminderData['title'] as String? ?? 'تذكير';
+      final url = reminderData['url'] as String? ?? '';
+      final importance = reminderData['importance'] as String? ?? 'day';
+
+      // إعادة تعيين عداد المحاولات
+      _attemptCounters[reminderId] = 0;
+
+      // جدولة التذكير مع الفحص الخفي
+      await scheduleReminderWithHiddenCheck(
+        reminderId: reminderId,
+        title: title,
+        url: url,
+        scheduledDate: scheduledDate,
+        importance: importance,
+        additionalPayload: {
+          'content': reminderData['content']?.toString() ?? '',
+          'imageUrl': reminderData['image_url']?.toString() ?? '',
+          'createdAt': reminderData['created_at']?.toString() ?? '',
+          'updatedAt': reminderData['updated_at']?.toString() ?? '',
+          'category': reminderData['category']?.toString() ?? '',
+          'complexity': reminderData['complexity']?.toString() ?? '',
+          'domain': reminderData['domain']?.toString() ?? '',
         },
-        isPostNotification: true,
       );
+
+      print('✅ تم تحديث التذكير $reminderId للوقت: $nextReminderTimeStr');
     } else {
-      _showSnackBar('لم يتم توفير وقت تذكير تالي لتحديث الإشعارات.');
+      print('⚠️ لا يمكن تحديث الإشعارات: next_reminder_time مفقود');
     }
   }
 
-  /// إلغاء جميع الإشعارات
+  Future<List<DateTime>> getScheduledTimesForReminder(int reminderId) async {
+    final notificationMap = await _getNotificationMap();
+    final notificationIds = notificationMap[reminderId] ?? [];
+    List<DateTime> scheduledTimes = [];
+
+    for (final id in notificationIds) {
+      final notifications =
+          await AwesomeNotifications().listScheduledNotifications();
+      for (final notification in notifications) {
+        if (notification.content?.id == id) {
+          final schedule = notification.schedule;
+          if (schedule is NotificationCalendar) {
+            final scheduledDate = DateTime(
+              schedule.year ?? DateTime.now().year,
+              schedule.month ?? DateTime.now().month,
+              schedule.day ?? DateTime.now().day,
+              schedule.hour ?? 0,
+              schedule.minute ?? 0,
+              schedule.second ?? 0,
+              schedule.millisecond ?? 0,
+            );
+            scheduledTimes.add(scheduledDate);
+          }
+        }
+      }
+    }
+
+    return scheduledTimes;
+  }
+
   Future<void> cancelAllNotifications() async {
+    print('🧹 إلغاء جميع الإشعارات والمؤقتات');
+
     await AwesomeNotifications().cancelAll();
-    await _logNotificationEvent('Canceled All', 0, null);
-    _showSnackBar('تم إلغاء جميع الإشعارات بنجاح!');
+
+    // إلغاء جميع المؤقتات الخفية
+    for (final timer in _checkTimers.values) {
+      timer.cancel();
+    }
+    _checkTimers.clear();
+
+    // مسح عدادات المحاولات
+    _attemptCounters.clear();
+
+    // مسح خريطة الإشعارات
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('notification_map');
+
+    print('✅ تم إلغاء جميع الإشعارات والمؤقتات بنجاح');
   }
 
-  /// التحقق من حالة أذونات الإشعارات
   Future<bool> checkPermissions() async {
-    return _permissionsGranted;
+    return await AwesomeNotifications().isNotificationAllowed();
   }
 
-  /// طلب أذونات الإشعارات
   Future<bool> requestPermissions() async {
-    _permissionsGranted =
-        await AwesomeNotifications().requestPermissionToSendNotifications();
-    return _permissionsGranted;
+    return await AwesomeNotifications().requestPermissionToSendNotifications();
   }
 
-  /// حفظ خريطة الإشعارات في SharedPreferences
   Future<void> _saveNotificationMap(Map<int, List<int>> notificationMap) async {
     final prefs = await SharedPreferences.getInstance();
     final Map<String, dynamic> stringKeyMap = notificationMap.map(
@@ -525,25 +555,48 @@ class NotificationService {
     await prefs.setString('notification_map', jsonEncode(stringKeyMap));
   }
 
-  /// استرجاع خريطة الإشعارات من SharedPreferences
   Future<Map<int, List<int>>> _getNotificationMap() async {
     final prefs = await SharedPreferences.getInstance();
     final String? mapString = prefs.getString('notification_map');
     if (mapString == null) return {};
-
     final Map<String, dynamic> decoded = jsonDecode(mapString);
     return decoded.map(
       (key, value) => MapEntry(int.parse(key), (value as List).cast<int>()),
     );
   }
 
-  /// تسجيل أحداث الإشعارات في SharedPreferences لأغراض التصحيح
-  Future<void> _logNotificationEvent(
-      String event, int id, Map<String, String>? payload) async {
-    final prefs = await SharedPreferences.getInstance();
-    final logs = prefs.getStringList('notification_logs') ?? [];
-    logs.add(
-        '${DateTime.now().toIso8601String()}: $event - ID: $id - Payload: $payload');
-    await prefs.setStringList('notification_logs', logs);
+  // معلومات إحصائية مفيدة للتطوير
+  void printStatus() {
+    print('📊 === حالة خدمة الإشعارات ===');
+    print('🔔 إشعارات نشطة: ${_pendingTimers.length}');
+    print('🔍 فحوصات خفية نشطة: ${_checkTimers.length}');
+    print('🔢 عدادات المحاولات: ${_attemptCounters.length}');
+
+    for (final entry in _attemptCounters.entries) {
+      print('   - التذكير ${entry.key}: ${entry.value} محاولات');
+    }
+
+    for (final entry in _checkTimers.entries) {
+      print('   - فحص خفي للتذكير ${entry.key}: نشط');
+    }
+    print('================================');
+  }
+
+  void dispose() {
+    print('🧹 تنظيف خدمة الإشعارات...');
+
+    // إلغاء جميع المؤقتات
+    for (final timer in _pendingTimers.values) {
+      timer.cancel();
+    }
+    for (final timer in _checkTimers.values) {
+      timer.cancel();
+    }
+
+    _pendingTimers.clear();
+    _checkTimers.clear();
+    _attemptCounters.clear();
+
+    print('✅ تم تنظيف جميع المؤقتات والموارد');
   }
 }

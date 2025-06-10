@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:reminder/services/api_service.dart';
-import 'package:reminder/utils/language_manager.dart';
-import 'package:reminder/l10n/app_localizations.dart';
+import 'package:flex_reminder/services/api_service.dart';
+import 'package:flex_reminder/utils/language_manager.dart';
+import 'package:flex_reminder/l10n/app_localizations.dart';
 
 class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String? title;
@@ -10,7 +10,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Function(String)? onSearchChanged;
   final bool showSettings;
   final bool showLeading;
-  final VoidCallback? onSearchPressed;
 
   const CustomAppBar({
     Key? key,
@@ -19,7 +18,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.onSearchChanged,
     this.showSettings = true,
     this.showLeading = true,
-    this.onSearchPressed,
   }) : super(key: key);
 
   @override
@@ -115,52 +113,6 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                   )
                 : const Text('')),
         actions: [
-          if (showSearch)
-            IconButton(
-              icon: const Icon(Icons.search, color: Colors.black),
-              onPressed: onSearchPressed,
-            ),
-          // إضافة الصورة الشخصية
-          FutureBuilder<Map<String, dynamic>>(
-            future: ApiService().getUser(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: CircularProgressIndicator(),
-                );
-              }
-              if (snapshot.hasError || !snapshot.hasData) {
-                return IconButton(
-                  icon: const Icon(Icons.person, color: Colors.black),
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/user_profile');
-                  },
-                );
-              }
-
-              final userData = snapshot.data!;
-              final profileImage = userData['profile_image'] ?? '';
-
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: GestureDetector(
-                  onTap: () {
-                    Navigator.pushNamed(context, '/user_profile');
-                  },
-                  child: CircleAvatar(
-                    radius: 18,
-                    backgroundImage: profileImage.isNotEmpty
-                        ? NetworkImage(profileImage)
-                        : null,
-                    child: profileImage.isEmpty
-                        ? const Icon(Icons.person, color: Colors.white)
-                        : null,
-                  ),
-                ),
-              );
-            },
-          ),
           PopupMenuButton<String>(
             color: Colors.white,
             icon: const Icon(Icons.language, color: Colors.black),

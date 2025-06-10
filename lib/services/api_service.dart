@@ -1,263 +1,99 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:reminder/models/reminder.dart';
-import 'package:reminder/models/reminders_response.dart';
 import 'package:flutter/material.dart';
-import 'package:reminder/models/user_free_time.dart';
-import 'package:reminder/models/user.dart';
-import 'package:reminder/services/notification_service.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/data/latest_all.dart' as tz;
-import 'package:timezone/timezone.dart' as tz;
-import 'package:awesome_notifications/awesome_notifications.dart';
+import 'package:flex_reminder/models/reminder.dart';
+import 'package:flex_reminder/models/reminders_response.dart';
+import 'package:flex_reminder/models/user_free_time.dart';
+import 'package:flex_reminder/models/user.dart';
+import 'api_functions/api_config.dart';
+import 'api_functions/auth_service.dart';
+import 'api_functions/subscription_service.dart';
+import 'api_functions/reminder_service.dart';
+import 'api_functions/user_service.dart';
+import 'api_functions/stats_service.dart';
+import 'api_functions/utils_service.dart';
+import 'dart:io' as io show File if (dart.library.html) 'dart:html' show File;
 import 'package:flutter/foundation.dart' show kIsWeb;
 
-// استيراد مشروط لـ File بناءً على المنصة
-import 'dart:io' as io show File if (dart.library.html) 'dart:html' show File;
-
 class ApiService {
-  static const String API_BASE_URL =
-      'https://purple-zebra-199646.hostingersite.com/api';
-  static const String API_PASSWORD = 'API_PASSWORD'; // استبدل بكلمة المرور الصحيحة
-  final _storage = FlutterSecureStorage();
-  
-  final NotificationService _notificationService = NotificationService();
+  final ApiConfig _apiConfig = ApiConfig();
+  final AuthService _authService;
+  final SubscriptionService _subscriptionService;
+  final ReminderService _reminderService;
+  final UserService _userService;
+  final StatsService _statsService;
+  final UtilsService _utilsService;
 
-  ApiService() {
-    _initNotifications();
+  ApiService()
+      : _authService = AuthService(ApiConfig()),
+        _subscriptionService = SubscriptionService(ApiConfig()),
+        _reminderService = ReminderService(ApiConfig()),
+        _userService = UserService(ApiConfig()),
+        _statsService = StatsService(ApiConfig()),
+        _utilsService = UtilsService(ApiConfig());
+
+  // Authentication
+  Future<Map<String, dynamic>> register(String name, String email, String password, {String language = 'en'}) async {
+    return await _authService.register(name, email, password, language: language);
   }
 
-  Future<void> _initNotifications() async {
-    await _notificationService.init();
-  }
-
-  Future<void> register(String name, String email, String password) async {
-    final url = Uri.parse('$API_BASE_URL/register');
-    final response = await http.post(
-      url,
-      headers: {'X-API-Password': API_PASSWORD},
-      body: {
-        'name': name,
-        'email': email,
-        'password': password,
-      },
-    );
-
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      final errorData = json.decode(response.body);
-      throw Exception(errorData['message'] ?? 'Registration failed.');
-    }
-  }
-
-  Future<String?> login(String email, String password) async {
-    final url = Uri.parse('$API_BASE_URL/login');
-    final response = await http.post(
-      url,
-      headers: {'X-API-Password': API_PASSWORD},
-      body: {
-        'email': email,
-        'password': password,
-        'device_name': 'mobile_app',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final responseData = json.decode(response.body);
-      final token = responseData['access_token'];
-      if (token != null) {
-        await _storage.write(key: 'auth_token', value: token);
-        print('Login Token: $token');
-        return token;
-      } else {
-        throw Exception('Login successful, but no token received.');
-      }
-    } else {
-      final errorData = json.decode(response.body);
-      throw Exception(errorData['message'] ?? 'Login failed.');
-    }
-  }
-
- 
-
-  Future<String?> getToken() async {
-    return await _storage.read(key: 'auth_token');
+  Future<Map<String, dynamic>> login(String email, String password, {String language = 'en'}) async {
+    return await _authService.login(email, password, language: language);
   }
 
   Future<void> logout() async {
-    await _storage.delete(key: 'auth_token');
+    await _authService.logout();
   }
 
-  Future<Map<String, dynamic>> user() async {
-    final token = await getToken();
-    if (token == null) {
-      throw Exception('No authentication token found');
-    }
+  Future<void> verifyEmail(String email, String code) async {
+    await _authService.verifyEmail(email, code);
+  }
 
-    final response = await http.get(
-      Uri.parse('$API_BASE_URL/user'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
+  Future<void> resendVerificationCode(String email) async {
+    await _authService.resendVerificationCode(email);
+  }
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      if (data['status'] == 'success') {
-        return data['data'];
-      } else {
-        throw Exception('Failed to retrieve user data: ${data['message']}');
-      }
-    } else {
-      throw Exception('Failed to retrieve user data: ${response.body}');
-    }
+  // Token Management
+  Future<bool> checkTokenValidity() async {
+    return await _apiConfig.checkTokenValidity();
+  }
+
+  Future<String?> getToken() async {
+    return await _apiConfig.getToken();
+  }
+
+  // Subscription
+  Future<void> changeOffer(String variantId) async {
+    await _subscriptionService.changeOffer(variantId);
   }
 
   Future<Map<String, dynamic>> checkSubscription() async {
-    final token = await getToken();
-    if (token == null) {
-      throw Exception('No authentication token found');
-    }
-
-    final response = await http.get(
-      Uri.parse('$API_BASE_URL/check-subscription'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Failed to check subscription: ${response.body}');
-    }
+    return await _subscriptionService.checkSubscription();
   }
 
   Future<String> getCustomerPortalUrl() async {
-    final token = await getToken();
-    if (token == null) {
-      throw Exception('No authentication token found');
-    }
-
-    final response = await http.get(
-      Uri.parse('$API_BASE_URL/update-payment-info'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['url'];
-    } else {
-      throw Exception('Failed to fetch customer portal URL: ${response.body}');
-    }
+    return await _subscriptionService.getCustomerPortalUrl();
   }
 
-  Future<List<Map<String, dynamic>>> getOrders() async {
-    final token = await getToken();
-    if (token == null) {
-      throw Exception('No authentication token found');
-    }
-
-    final response = await http.get(
-      Uri.parse('$API_BASE_URL/orders'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      return List<Map<String, dynamic>>.from(jsonDecode(response.body));
-    } else {
-      throw Exception('Failed to fetch orders: ${response.body}');
-    }
+  Future<void> pauseSubscription() async {
+    await _subscriptionService.pauseSubscription();
   }
 
+  Future<void> cancelSubscription() async {
+    await _subscriptionService.cancelSubscription();
+  }
+
+  Future<Map<String, dynamic>> resumeSubscription() async {
+    return await _subscriptionService.resumeSubscription();
+  }
+
+  Future<String> buySubscription(String subscriptionId) async {
+    return await _subscriptionService.buySubscription(subscriptionId);
+  }
+
+  // Reminders
   Future<List<int>> getRemindersIds() async {
-    final url = Uri.parse('$API_BASE_URL/getRemindersIds');
-    final token = await getToken();
-
-    final response = await http.get(
-      url,
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        if (token != null) 'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final decodedData = json.decode(response.body) as List<dynamic>;
-      return decodedData.map((id) => id as int).toList();
-    } else {
-      try {
-        final errorData = json.decode(response.body) as Map<String, dynamic>?;
-        throw Exception(errorData?['message'] ??
-            'Failed to fetch reminder IDs: ${response.statusCode}');
-      } catch (e) {
-        throw Exception(
-            'Failed to parse response: ${response.statusCode} - ${response.body}');
-      }
-    }
-  }
-
-  Future<Map<String, dynamic>> getApiConfig() async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$API_BASE_URL/api-credentials'),
-      headers: {'Authorization': 'Bearer $token'},
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    }
-    throw Exception('Failed to fetch API config: ${response.body}');
-  }
-
-  Future<String?> updateReminder(Reminder reminder) async {
-    final url = Uri.parse('$API_BASE_URL/update-reminder');
-    final token = await getToken();
-
-    final response = await http.post(
-      url,
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        if (token != null) 'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        "id": reminder.id,
-        'next_reminder_time': reminder.nextReminderTime,
-      }),
-    );
-
-    if (response.statusCode != 200) {
-      final errorData = json.decode(response.body);
-      throw Exception(errorData['message'] ?? 'Failed to update reminder.');
-    }
-    return null; // أو يمكنك إرجاع قيمة إذا كان الـ API يعيد بيانات مفيدة
-  }
-
-  Future<void> deleteReminder(int id) async {
-    final url = Uri.parse('$API_BASE_URL/deleteReminder/$id');
-    final token = await getToken();
-
-    final response = await http.get(
-      url,
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        if (token != null) 'Authorization': 'Bearer $token',
-      },
-    );
-
-    if (response.statusCode != 200) {
-      final errorData = json.decode(response.body);
-      throw Exception(errorData['message'] ?? 'Failed to delete reminder.');
-    }
+    return await _reminderService.getRemindersIds();
   }
 
   Future<RemindersResponse> fetchReminders({
@@ -268,459 +104,116 @@ class ApiService {
     String? complexity,
     String? domain,
   }) async {
-    final url = Uri.parse(
-      '$API_BASE_URL/reminders?page=$page&perPage=$perPage'
-      '${searchQuery.isNotEmpty ? '&search=$searchQuery' : ''}'
-      '${category != null && category != 'All' ? '&category=$category' : ''}'
-      '${complexity != null && complexity != 'All' ? '&complexity=$complexity' : ''}'
-      '${domain != null && domain != 'All' ? '&domain=$domain' : ''}',
+    return await _reminderService.fetchReminders(
+      page: page,
+      perPage: perPage,
+      searchQuery: searchQuery,
+      category: category,
+      complexity: complexity,
+      domain: domain,
     );
-    final token = await getToken();
-
-    final response = await http.get(
-      url,
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        if (token != null) 'Authorization': 'Bearer $token',
-      },
-    ).timeout(Duration(seconds: 10));
-
-    if (response.statusCode == 200) {
-      final Map<String, dynamic> responseData = json.decode(response.body);
-      return RemindersResponse.fromJson(responseData);
-    } else if (response.statusCode == 401) {
-      throw Exception('Unauthorized. Please log in again.');
-    } else {
-      throw Exception('Failed to load reminders: ${response.statusCode}');
-    }
   }
 
-  Future<void> updateStats(String postUrl, bool opened) async {
-    final url = Uri.parse('$API_BASE_URL/update-stats');
-    final token = await getToken();
-    final response = await http.post(
-      url,
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        if (token != null) 'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'url': postUrl,
-        'opened': opened,
-      }),
-    );
-
-    if (response.statusCode != 200) {
-      final errorData = json.decode(response.body);
-      throw Exception(errorData['message'] ?? 'Failed to update stats.');
-    }
+  Future<void> deleteReminder(int id) async {
+    await _reminderService.deleteReminder(id);
   }
 
   Future<Reminder> getReminder(String postUrl) async {
-    try {
-      final url = Uri.parse('$API_BASE_URL/reminder?url=$postUrl');
-      final token = await getToken();
-      final response = await http.get(
-        url,
-        headers: {
-          'X-API-Password': API_PASSWORD,
-          if (token != null) 'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        if (response.body.isEmpty) {
-          throw Exception('Empty response received');
-        }
-
-        try {
-          final decodedData = json.decode(response.body);
-          return Reminder.fromJson(decodedData);
-        } on FormatException catch (e) {
-          print('JSON parsing error: ${response.body}');
-          throw Exception('Invalid response format: ${e.message}');
-        }
-      } else if (response.statusCode == 404) {
-        throw Exception('Reminder not found');
-      } else {
-        try {
-          final errorData = json.decode(response.body);
-          throw Exception(errorData['message'] ?? 'Failed to load reminder');
-        } catch (e) {
-          throw Exception('Failed to load reminder: ${response.statusCode}');
-        }
-      }
-    } catch (e) {
-      print('Error in getReminder: $e');
-      rethrow;
-    }
-  }
-
-  Future<Map<String, dynamic>> getUser() async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$API_BASE_URL/user'),
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        if (token != null) 'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      throw Exception('Failed to load user data');
-    }
+    return await _reminderService.getReminder(postUrl);
   }
 
   Future<Reminder> getReminderById(int postId) async {
-    try {
-      final url = Uri.parse('$API_BASE_URL/reminderById?id=$postId');
-      final token = await getToken();
-      final response = await http.get(
-        url,
-        headers: {
-          'X-API-Password': API_PASSWORD,
-          if (token != null) 'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        if (response.body.isEmpty) {
-          throw Exception('Empty response received');
-        }
-
-        try {
-          final decodedData = json.decode(response.body);
-          return Reminder.fromJson(decodedData);
-        } on FormatException catch (e) {
-          print('JSON parsing error: ${response.body}');
-          throw Exception('Invalid response format: ${e.message}');
-        }
-      } else if (response.statusCode == 404) {
-        throw Exception('Reminder not found');
-      } else {
-        try {
-          final errorData = json.decode(response.body);
-          throw Exception(errorData['message'] ?? 'Failed to load reminder');
-        } catch (e) {
-          throw Exception('Failed to load reminder: ${response.statusCode}');
-        }
-      }
-    } catch (e) {
-      print('Error in getReminderById: $e');
-      rethrow;
-    }
+    return await _reminderService.getReminderById(postId);
   }
 
-  Future<Map<String, dynamic>> getStats(String userId, String period) async {
-    final response = await http.get(
-      Uri.parse('$API_BASE_URL/stats?user_id=$userId&period=$period'),
-      headers: {'Authorization': 'Bearer ${await getToken()}'},
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    }
-    throw Exception('Failed to fetch stats');
+  Future<Map<String, dynamic>> reschedulePost(String postUrl, String importance) async {
+    return await _reminderService.reschedulePost(postUrl, importance);
   }
 
-  Future<Map<String, dynamic>> updateLanguage(String language) async {
-    final url = Uri.parse('$API_BASE_URL/update-language');
-    final token = await getToken();
-    if (token == null) {
-      throw Exception('No authentication token found');
-    }
-
-    final response = await http.post(
-      url,
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({'language': language}),
-    );
-
-    if (response.statusCode == 200) {
-      final responseData = json.decode(response.body);
-      return {'success': true, 'message': responseData['message']};
-    } else {
-      final errorData = json.decode(response.body);
-      throw Exception(errorData['message'] ?? 'Failed to update language.');
-    }
-  }
-
-  Future<Map<String, dynamic>> fetchRemindersData(String userId, String period) async {
-    final response = await http.get(
-      Uri.parse('$API_BASE_URL/remindersData?user_id=$userId&period=$period'),
-      headers: {'Authorization': 'Bearer ${await getToken()}'},
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    }
-    throw Exception('Failed to fetch reminders');
-  }
-
-  Future<Map<String, dynamic>> getApiCredentials() async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$API_BASE_URL/api-credentials'),
-      headers: {'Authorization': 'Bearer $token'},
-    );
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    }
-    throw Exception('Failed to fetch API credentials');
-  }
-
-  Future<User> getCurrentUser() async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$API_BASE_URL/user'),
-      headers: {'Authorization': 'Bearer $token'},
-    );
-    if (response.statusCode == 200) {
-      return User.fromJson(jsonDecode(response.body));
-    } else {
-      final errorData = json.decode(response.body);
-      throw Exception(errorData['error'] ?? 'Failed to fetch user.');
-    }
-  }
-
-  Future<String> reschedulePost(String postUrl, String importance) async {
-    final url = Uri.parse('$API_BASE_URL/reschedule-post');
-    final token = await getToken();
-    final response = await http.post(
-      url,
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        if (token != null) 'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({'url': postUrl, 'importance': importance}),
-    );
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final responseData = json.decode(response.body);
-      final bestTime = responseData['best_time'];
-      if (bestTime != null) {
-        return bestTime;
-      } else {
-        throw Exception('لم يتم استلام best_time.');
-      }
-    } else {
-      final errorData = json.decode(response.body);
-      throw Exception(errorData['message'] ?? 'فشل في إعادة جدولة المنشور.');
-    }
+  Future<Map<String, dynamic>> updateReminder(Reminder reminder) async {
+    return await _reminderService.updateReminder(reminder);
   }
 
   Future<Map<String, dynamic>> savePost(Map<String, dynamic> data) async {
-    final token = await getToken();
-    String endpoint = '$API_BASE_URL/save-post';
-
-    final response = await http.post(
-      Uri.parse(endpoint),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: json.encode(data),
-    );
-
-    if (response.statusCode == 200) {
-      return json.decode(response.body);
-    }
-    throw Exception('Failed to save post: ${response.body}');
+    return await _reminderService.savePost(data);
   }
 
-  Future<UserFreeTime> createFreeTime(
-    String day,
-    TimeOfDay startTime,
-    TimeOfDay endTime,
-    bool isOffDay,
-  ) async {
-    final url = Uri.parse('$API_BASE_URL/free-times');
-    final token = await getToken();
-
-    final String formattedStartTime = formatTimeOfDay(startTime);
-    final String formattedEndTime = formatTimeOfDay(endTime);
-
-    final response = await http.post(
-      url,
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        if (token != null) 'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'day': day,
-        'start_time': formattedStartTime,
-        'end_time': formattedEndTime,
-        'is_off_day': isOffDay ? 1 : 0,
-      }),
-    );
-
-    if (response.statusCode == 201) {
-      return UserFreeTime.fromJson(json.decode(response.body));
-    } else {
-      final errorData = json.decode(response.body);
-      throw Exception(errorData['message'] ??
-          'Failed to create free time: ${response.statusCode}');
-    }
+  // User
+  Future<Map<String, dynamic>> getUser() async {
+    return await _userService.getUser();
   }
 
-  Future<Map<String, dynamic>> updateFreeTime(
-    int id,
-    String day,
-    TimeOfDay startTime,
-    TimeOfDay endTime,
-    bool isOffDay,
-  ) async {
-    final url = Uri.parse('$API_BASE_URL/free-times/$id');
-    final token = await getToken();
-
-    final String formattedStartTime = formatTimeOfDay(startTime);
-    final String formattedEndTime = formatTimeOfDay(endTime);
-
-    final response = await http.put(
-      url,
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        if (token != null) 'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'day': day,
-        'start_time': formattedStartTime,
-        'end_time': formattedEndTime,
-        'is_off_day': isOffDay ? 1 : 0,
-      }),
-    );
-
-    if (response.statusCode == 200) {
-      return {'success': true};
-    } else {
-      final errorData = json.decode(response.body);
-      return {
-        'success': false,
-        'message': errorData['message'] ?? 'Failed to update free time.'
-      };
-    }
+  Future<User> getCurrentUser() async {
+    return await _userService.getCurrentUser();
   }
 
-  String formatTimeOfDay(TimeOfDay time) {
-    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  Future<Map<String, dynamic>> updateLanguage(String language) async {
+    return await _userService.updateLanguage(language);
+  }
+
+  Future<UserFreeTime> createFreeTime(String day, TimeOfDay startTime, TimeOfDay endTime, bool isOffDay) async {
+    return await _userService.createFreeTime(day, startTime, endTime, isOffDay);
+  }
+
+  Future<Map<String, dynamic>> updateFreeTime(int id, String day, TimeOfDay startTime, TimeOfDay endTime, bool isOffDay) async {
+    return await _userService.updateFreeTime(id, day, startTime, endTime, isOffDay);
   }
 
   Future<List<UserFreeTime>> fetchFreeTimes() async {
-    final url = Uri.parse('$API_BASE_URL/free-times');
-    final token = await getToken();
-    final response = await http.get(
-      url,
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        if (token != null) 'Authorization': 'Bearer $token',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final List<dynamic> data = json.decode(response.body);
-      return data.map((item) => UserFreeTime.fromJson(item)).toList();
-    } else {
-      throw Exception(
-          'Failed to load free times: ${response.statusCode} - ${response.body}');
-    }
+    return await _userService.fetchFreeTimes();
   }
 
   Future<void> deleteFreeTime(int id) async {
-    final url = Uri.parse('$API_BASE_URL/free-times/$id');
-    final token = await getToken();
-    final response = await http.delete(
-      url,
-      headers: {
-        'X-API-Password': API_PASSWORD,
-        if (token != null) 'Authorization': 'Bearer $token',
-      },
-    );
-
-    if (response.statusCode != 204) {
-      final errorData = json.decode(response.body);
-      throw Exception(errorData['message'] ??
-          'Failed to delete free time: ${response.statusCode}');
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> fetchCategoryStats(int userId) async {
-    final token = await getToken();
-    final response = await http.get(
-      Uri.parse('$API_BASE_URL/category-stats?user_id=$userId'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
-      return data.cast<Map<String, dynamic>>();
-    } else if (response.statusCode == 401) {
-      throw Exception('Unauthorized');
-    } else {
-      throw Exception('Failed to load category stats: ${response.statusCode}');
-    }
-  }
-
-  Future<int?> getCurrentUserId() async {
-    final token = await getToken();
-    if (token == null) return null;
-
-    try {
-      final parts = token.split('.');
-      if (parts.length == 3) {
-        final payload = jsonDecode(
-            utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
-        return payload['sub'] as int?;
-      }
-      return null;
-    } catch (e) {
-      print('Error decoding token: $e');
-      return null;
-    }
+    await _userService.deleteFreeTime(id);
   }
 
   Future<void> updateUserProfile(Map<String, dynamic> data, {dynamic image}) async {
-    final url = '$API_BASE_URL/user/update';
-    final token = await getToken();
-    if (token == null) throw Exception('No authentication token found');
+    await _userService.updateUserProfile(data, image: image);
+  }
 
-    var request = http.MultipartRequest('POST', Uri.parse(url));
-    request.headers['Authorization'] = 'Bearer $token';
-    request.headers['Accept'] = 'application/json';
-    request.headers['X-API-Password'] = API_PASSWORD;
+  // Stats
+  Future<Map<String, dynamic>> getSavedPostStatistics() async {
+    return await _statsService.getSavedPostStatistics();
+  }
 
-    data.forEach((key, value) {
-      request.fields[key] = value.toString();
-    });
+  Future<Map<String, dynamic>> getOpenedStatsAnalysis() async {
+    return await _statsService.getOpenedStatsAnalysis();
+  }
 
-    // التحقق من المنصة قبل التعامل مع الصورة
-    if (!kIsWeb && image != null && image is io.File) {
-      request.files.add(
-        await http.MultipartFile.fromPath('profile_image', image.path),
-      );
-    } else if (kIsWeb && image != null) {
-      // للويب، يجب أن يكون image من نوع Blob أو File (من dart:html)
-      // هنا نحتاج إلى معالجة خاصة للويب، ولكن هذا يعتمد على كيفية تمرير الصورة
-      throw UnimplementedError('Image upload on web is not implemented yet.');
-    }
+  Future<void> updateStats(String postUrl, bool opened) async {
+    await _statsService.updateStats(postUrl, opened);
+  }
 
-    final response = await request.send();
-    final responseBody = await response.stream.bytesToString();
-    if (response.statusCode != 200) {
-      final errorData = json.decode(responseBody) as Map<String, dynamic>?;
-      throw Exception(errorData?['message'] ?? 'Failed to update profile');
-    }
+  Future<Map<String, dynamic>> getStats(String userId, String period) async {
+    return await _statsService.getStats(userId, period);
+  }
+
+  Future<Map<String, dynamic>> fetchRemindersData(String userId, String period) async {
+    return await _statsService.fetchRemindersData(userId, period);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchCategoryStats(int userId) async {
+    return await _statsService.fetchCategoryStats(userId);
+  }
+
+  // Utilities
+  Future<Map<String, dynamic>> request(String method, String endpoint, {Map<String, dynamic>? data}) async {
+    return await _utilsService.request(method, endpoint, data: data);
+  }
+
+  Future<DateTime> getServerTime() async {
+    return await _utilsService.getServerTime();
+  }
+
+  Future<Map<String, dynamic>> getApiConfig() async {
+    return await _utilsService.getApiConfig();
+  }
+
+  Future<Map<String, dynamic>> getApiCredentials() async {
+    return await _utilsService.getApiCredentials();
+  }
+
+  Future<int?> getCurrentUserId() async {
+    return await _apiConfig.getCurrentUserId(); // Updated to use _apiConfig
   }
 }

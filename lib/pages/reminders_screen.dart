@@ -1,18 +1,21 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart'; // استيراد Provider
-import 'package:reminder/models/reminder.dart';
-import 'package:reminder/models/reminders_response.dart';
-import 'package:reminder/services/api_service.dart';
-import 'package:reminder/pages/save_post_screen.dart';
+import 'package:provider/provider.dart';
+import 'package:flex_reminder/models/reminder.dart';
+import 'package:flex_reminder/models/reminders_response.dart';
+import 'package:flex_reminder/services/api_service.dart';
+import 'package:flex_reminder/services/notification_service.dart';
+import 'package:flex_reminder/pages/save_post_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
-import 'package:reminder/pages/reminder_detail_screen.dart';
-import 'package:reminder/pages/edit_reminder_screen.dart';
+import 'package:flex_reminder/pages/reminder_detail_screen.dart';
+import 'package:flex_reminder/pages/edit_reminder_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:reminder/widgets/custom_app_bar.dart';
-import 'package:reminder/l10n/app_localizations.dart';
-import 'package:reminder/utils/language_manager.dart'; // استيراد LanguageManager
+import 'package:flex_reminder/widgets/upper_app_bar.dart';
+import 'package:flex_reminder/widgets/lower_navigation_bar.dart';
+import 'package:flex_reminder/l10n/app_localizations.dart';
+import 'package:flex_reminder/utils/language_manager.dart';
+import 'package:flex_reminder/providers/auth_provider.dart';
 
 class _ReminderSearchDelegate extends SearchDelegate<String> {
   final String initialQuery;
@@ -38,8 +41,15 @@ class _ReminderSearchDelegate extends SearchDelegate<String> {
 
   @override
   Widget buildLeading(BuildContext context) {
+    final isArabic = Provider.of<LanguageManager>(context, listen: false)
+            .locale
+            .languageCode ==
+        'ar';
     return IconButton(
-      icon: const Icon(Icons.arrow_back, color: Colors.black),
+      icon: Icon(
+        isArabic ? Icons.chevron_right : Icons.chevron_left,
+        color: Colors.black,
+      ),
       onPressed: () => close(context, query),
     );
   }
@@ -47,13 +57,13 @@ class _ReminderSearchDelegate extends SearchDelegate<String> {
   @override
   Widget buildResults(BuildContext context) {
     onQueryChanged(query);
-    return Container();
+    return Container(color: Colors.white);
   }
 
   @override
   Widget buildSuggestions(BuildContext context) {
     onQueryChanged(query);
-    return Container();
+    return Container(color: Colors.white);
   }
 
   @override
@@ -79,7 +89,9 @@ class _ReminderSearchDelegate extends SearchDelegate<String> {
 }
 
 class RemindersScreen extends StatefulWidget {
-  const RemindersScreen({Key? key}) : super(key: key);
+  final int initialIndex;
+
+  const RemindersScreen({Key? key, this.initialIndex = 0}) : super(key: key);
 
   @override
   _RemindersScreenState createState() => _RemindersScreenState();
@@ -88,6 +100,7 @@ class RemindersScreen extends StatefulWidget {
 class _RemindersScreenState extends State<RemindersScreen>
     with SingleTickerProviderStateMixin {
   final ApiService _apiService = ApiService();
+  final NotificationService _notificationService = NotificationService();
   List<Reminder> _reminders = [];
   List<String> _categories = [];
   List<String> _complexities = [];
@@ -104,18 +117,22 @@ class _RemindersScreenState extends State<RemindersScreen>
 
   late TabController _tabController;
   int _currentPage = 1;
-  int _perPage = 10;
+  int _perPage = 4; // عدد التذكيرات لكل دفعة
   int _totalReminders = 0;
   late AppLocalizations localizations;
-  BuildContext? _screenContext;
+
+  int _currentNavIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _checkLoginStatus();
+    _currentNavIndex = widget.initialIndex;
     _listenForShareData();
-    _checkAndRefreshIfNeeded();
+    // تأخير قصير لضمان اكتمال بناء الشاشة قبل التحقق من حالة تسجيل الدخول
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkLoginStatus();
+    });
   }
 
   @override
@@ -126,17 +143,35 @@ class _RemindersScreenState extends State<RemindersScreen>
   }
 
   Future<void> _checkLoginStatus() async {
-    final token = await _apiService.getToken();
-    if (token == null && mounted) {
+    print('Checking login status...');
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    // إضافة تأخير قصير لضمان اكتمال تهيئة AuthProvider
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    // استخدام AuthProvider للتحقق من حالة المصادقة
+    if (authProvider.status == AuthStatus.loading) {
+      // انتظار اكتمال تهيئة حالة المصادقة
+      await authProvider.initializeAuthentication();
+      await authProvider.checkTokenValidity();
+    }
+
+    if (!authProvider.isAuthenticated && mounted) {
+      print('Not authenticated, redirecting to auth screen.');
       Navigator.pushReplacementNamed(context, '/auth');
     } else {
+      print('Authenticated, performing initial fetch.');
       _fetchReminders();
     }
   }
 
   Future<void> _fetchReminders({bool isLoadMore = false}) async {
-    if (isLoadMore && _isLoadingMore) return;
+    if (isLoadMore && _isLoadingMore) {
+      print('Load more already in progress, skipping.');
+      return;
+    }
 
+    print('Fetching reminders: isLoadMore = $isLoadMore, page = $_currentPage');
     setState(() {
       if (!isLoadMore) _isLoading = true;
       _isLoadingMore = isLoadMore;
@@ -146,72 +181,235 @@ class _RemindersScreenState extends State<RemindersScreen>
       final response = await _apiService.fetchReminders(
         page: _currentPage,
         perPage: _perPage,
-        searchQuery: _searchQuery,
+        searchQuery: "",
         category: _selectedCategory,
         complexity: _selectedComplexity,
         domain: _selectedDomain,
       );
+      print(
+          'Reminders fetched successfully: ${response.reminders.length} items');
+
       if (mounted) {
+        final isArabic = Provider.of<LanguageManager>(context, listen: false)
+                .locale
+                .languageCode ==
+            'ar';
+        final allLabel = isArabic ? 'الكل' : 'All';
+
         setState(() {
           if (!isLoadMore) {
             _reminders = response.reminders;
-            _categories = ['All']..addAll(response.categories);
-            _complexities = ['All']..addAll(response.complexities);
-            _domains = ['All']..addAll(response.domains ?? []);
+            _categories = [allLabel]..addAll(response.categories);
+            _complexities = [allLabel]..addAll(response.complexities);
+            _domains = [allLabel]..addAll(response.domains ?? []);
+            print('Initial load: ${_reminders.length} reminders loaded');
           } else {
             _reminders.addAll(response.reminders);
+            print(
+                'Load more: ${_reminders.length} total reminders after adding ${response.reminders.length}');
           }
           _totalReminders = response.total ?? 0;
           _currentPage += 1;
         });
+
+        print('Processing current batch of reminders...');
+        await _processRemindersInBatches(response.reminders);
       }
     } catch (error) {
+      print('Error fetching reminders: $error');
       String errorMessage =
           localizations.unexpectedError ?? 'An unexpected error occurred';
       if (error.toString().contains('Unauthorized') ||
           error.toString().contains('403')) {
         errorMessage = localizations.unauthorizedError ??
-            'Unauthorized: Your subscription does not allow this action';
-        if (mounted)
-          Navigator.pushReplacementNamed(context, '/subscription_management');
+            'Unauthorized: Please log in again';
+        print('Unauthorized error, redirecting to auth screen.');
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/auth');
+        }
       } else if (error is Error) {
         errorMessage = error.toString();
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage), backgroundColor: Colors.red),
-        );
+        _showErrorSnackBar(errorMessage);
       }
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
           _isLoadingMore = false;
+          print('Fetching complete: Loading states reset');
         });
+      }
     }
   }
 
-  Future<void> _checkAndRefreshIfNeeded() async {
-    final prefs = await SharedPreferences.getInstance();
-    final needsRefresh = prefs.getBool('needs_refresh') ?? false;
-    if (needsRefresh) {
-      _currentPage = 1;
-      await _fetchReminders();
-      await prefs.setBool('needs_refresh', false);
+  Future<void> _processRemindersInBatches(List<Reminder> batch) async {
+    final now = DateTime.now();
+    print('Processing batch of ${batch.length} reminders');
+
+    await _syncBatchWithNotifications(batch, now);
+    print('Batch processing completed');
+  }
+
+  Future<void> _syncBatchWithNotifications(
+      List<Reminder> batch, DateTime now) async {
+    for (final reminder in batch) {
+      if (reminder.id == null || reminder.nextReminderTime == null) {
+        print(
+            'Skipping reminder with missing ID or nextReminderTime: ${reminder.title}');
+        continue;
+      }
+
+      print('Checking notifications for reminder ${reminder.id}');
+      final scheduledTimes =
+          await _notificationService.getScheduledTimesForReminder(reminder.id!);
+      final nextReminderDateTime = DateTime.parse(reminder.nextReminderTime!);
+
+      bool hasNotification = scheduledTimes.any((scheduledTime) =>
+          scheduledTime.toIso8601String() ==
+          nextReminderDateTime.toIso8601String());
+
+      if (!hasNotification) {
+        print(
+            'No matching notification found for reminder ${reminder.id}, scheduling new one');
+        final reminderData = {
+          'id': reminder.id,
+          'title': reminder.title,
+          'url': reminder.url ?? '',
+          'importance': reminder.importance ?? 'day',
+          'next_reminder_time': reminder.nextReminderTime,
+        };
+        try {
+          await _notificationService.updateReminderNotifications(reminderData);
+          print('New notification scheduled for reminder ${reminder.id}');
+        } catch (e) {
+          print(
+              'Error scheduling notification for reminder ${reminder.id}: $e');
+          _showErrorSnackBar('Failed to schedule notification: $e');
+        }
+      } else {
+        print('Reminder ${reminder.id} already has a matching notification');
+      }
+
+      if (nextReminderDateTime.isBefore(now)) {
+        print(
+            'Reminder ${reminder.id} next time (${reminder.nextReminderTime}) is before now, rescheduling');
+        try {
+          final rescheduleResult = await _apiService.reschedulePost(
+            reminder.url ?? '',
+            reminder.importance ?? 'day',
+          );
+          print('Raw rescheduleResult: $rescheduleResult');
+
+          if (rescheduleResult.containsKey('post')) {
+            final newScheduledTimeStr =
+                rescheduleResult['post']['next_reminder_time'] as String;
+            final newScheduledTime = DateTime.parse(newScheduledTimeStr);
+
+            setState(() {
+              reminder.nextReminderTime = newScheduledTimeStr;
+              print(
+                  'Reminder ${reminder.id} rescheduled to $newScheduledTimeStr');
+            });
+
+            try {
+              await _notificationService
+                  .updateReminderNotifications(rescheduleResult['post']);
+              print(
+                  'Notification updated for rescheduled reminder ${reminder.id}');
+            } catch (e) {
+              print(
+                  'Error updating notification for rescheduled reminder ${reminder.id}: $e');
+              _showErrorSnackBar('Failed to update notification: $e');
+            }
+          } else {
+            print(
+                'No valid data in reschedule response for reminder ${reminder.id}');
+            throw Exception('Invalid reschedule response: missing post data');
+          }
+        } catch (e) {
+          print('Error rescheduling reminder ${reminder.id}: $e');
+          _showErrorSnackBar('Failed to reschedule reminder: $e');
+        }
+      } else {
+        print('Reminder ${reminder.id} not rescheduled (not past due)');
+      }
     }
+  }
+
+  void _showErrorSnackBar(String message) {
+    print('Showing error snackbar: $message');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    );
   }
 
   List<Reminder> _getFilteredReminders(bool showOpened) {
-    return _reminders
+    print(
+        'Filtering reminders: showOpened = $showOpened, searchQuery = $_searchQuery');
+    List<Reminder> filtered = _reminders
         .where((reminder) => reminder.isOpened == (showOpened ? 1 : 0))
         .toList();
+
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered
+          .where((reminder) =>
+              reminder.title.toLowerCase().contains(_searchQuery.toLowerCase()))
+          .toList();
+      print('Applied search filter, filtered count: ${filtered.length}');
+    }
+    if (_selectedCategory != null &&
+        _selectedCategory != 'All' &&
+        _selectedCategory != 'الكل') {
+      filtered = filtered
+          .where((reminder) => reminder.category == _selectedCategory)
+          .toList();
+      print(
+          'Applied category filter ($_selectedCategory), filtered count: ${filtered.length}');
+    }
+    if (_selectedComplexity != null &&
+        _selectedComplexity != 'All' &&
+        _selectedComplexity != 'الكل') {
+      filtered = filtered
+          .where((reminder) => reminder.complexity == _selectedComplexity)
+          .toList();
+      print(
+          'Applied complexity filter ($_selectedComplexity), filtered count: ${filtered.length}');
+    }
+    if (_selectedDomain != null &&
+        _selectedDomain != 'All' &&
+        _selectedDomain != 'الكل') {
+      filtered = filtered
+          .where((reminder) => reminder.domain == _selectedDomain)
+          .toList();
+      print(
+          'Applied domain filter ($_selectedDomain), filtered count: ${filtered.length}');
+    }
+
+    print('Filtering complete, returning ${filtered.length} reminders');
+    return filtered;
   }
 
   void _listenForShareData() {
+    print('Listening for share data...');
     _intentSub = ReceiveSharingIntent.instance.getMediaStream().listen(
       (List<SharedMediaFile> value) {
         if (value.isNotEmpty && mounted) {
+          print('Received shared data: ${value.first.path}');
           setState(() {
             _sharedText = value.first.path;
             _showSavePostModal(_sharedText);
@@ -223,6 +421,7 @@ class _RemindersScreenState extends State<RemindersScreen>
 
     ReceiveSharingIntent.instance.getInitialMedia().then((value) {
       if (value.isNotEmpty && mounted) {
+        print('Received initial shared data: ${value.first.path}');
         setState(() {
           _sharedText = value.first.path;
           _showSavePostModal(_sharedText);
@@ -232,8 +431,9 @@ class _RemindersScreenState extends State<RemindersScreen>
     });
   }
 
-  void _showSavePostModal(String? sharedUrl) {
-    showModalBottomSheet(
+  Future<void> _showSavePostModal(String? sharedUrl) async {
+    print('Showing save post modal with URL: $sharedUrl');
+    final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -247,12 +447,24 @@ class _RemindersScreenState extends State<RemindersScreen>
         child: SavePostScreen(
           initialUrl: sharedUrl,
           onSave: () {
-            _currentPage = 1;
+            print('Post saved, triggering refresh');
+            setState(() {
+              _currentPage = 1;
+              _reminders.clear();
+            });
             _fetchReminders();
           },
         ),
       ),
     );
+
+    if (result == true) {
+      setState(() {
+        _currentPage = 1;
+        _reminders.clear();
+      });
+      await _fetchReminders();
+    }
   }
 
   void _updateReminderInList(Reminder updatedReminder) {
@@ -260,7 +472,12 @@ class _RemindersScreenState extends State<RemindersScreen>
       setState(() {
         final index = _reminders
             .indexWhere((reminder) => reminder.id == updatedReminder.id);
-        if (index != -1) _reminders[index] = updatedReminder;
+        if (index != -1) {
+          _reminders[index] = updatedReminder;
+          print('Reminder ${updatedReminder.id} updated in list');
+        } else {
+          print('Reminder ${updatedReminder.id} not found in list');
+        }
       });
     }
   }
@@ -269,19 +486,22 @@ class _RemindersScreenState extends State<RemindersScreen>
     if (mounted) {
       setState(() {
         _reminders.removeWhere((reminder) => reminder.id == id);
+        print('Reminder $id deleted from list');
       });
     }
   }
 
   void _loadMoreReminders(bool showOpened) {
     if (!_isLoadingMore && _reminders.length < _totalReminders) {
+      print('Loading more reminders for tab showOpened = $showOpened');
       _fetchReminders(isLoadMore: true);
+    } else {
+      print('No more reminders to load or already loading');
     }
   }
 
   void _showSearch(BuildContext context, AppLocalizations loc) {
-    // تم تمرير AppLocalizations هنا
-    final localizations = loc; // استخدام AppLocalizations الذي تم تمريره
+    print('Showing search dialog');
     showSearch(
       context: context,
       delegate: _ReminderSearchDelegate(
@@ -289,11 +509,10 @@ class _RemindersScreenState extends State<RemindersScreen>
         (newQuery) {
           setState(() {
             _searchQuery = newQuery;
-            _currentPage = 1;
-            _fetchReminders();
+            print('Search query updated to: $_searchQuery');
           });
         },
-        localizations, // تم تمرير localizations هنا
+        loc,
       ),
     );
   }
@@ -301,79 +520,81 @@ class _RemindersScreenState extends State<RemindersScreen>
   @override
   Widget build(BuildContext context) {
     localizations = AppLocalizations.of(context)!;
-    _screenContext = context;
-    return Consumer<LanguageManager>(// تغليف الشاشة بـ Consumer
-        builder: (context, languageManager, child) {
-      return WillPopScope(
-        onWillPop: () async => false,
-        child: DefaultTabController(
-          length: 2,
-          child: Scaffold(
-            // تم حذف Directionality هنا
-            appBar: CustomAppBar(
-              title: localizations.remindersTitle,
-              showSearch: true,
-              onSearchChanged: (query) {
-                setState(() {
-                  _searchQuery = query;
-                  _currentPage = 1;
-                  _fetchReminders();
-                });
-              },
-              showSettings: true,
-              //     showFilter: true,
-              showLeading: false,
-              onSearchPressed: () {
-                _showSearch(context, localizations); // تمرير localizations هنا
-              },
-            ),
-            backgroundColor: Colors.white,
-            body: Column(
-              children: [
-                TabBar(
-                  controller: _tabController,
-                  tabs: [
-                    Tab(text: localizations.unreadReminders),
-                    Tab(text: localizations.readReminders),
-                  ],
-                  labelColor: Colors.blue,
-                  unselectedLabelColor: Colors.grey[600],
-                  indicatorColor: Colors.blue,
-                  labelStyle: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                Expanded(
-                  child: TabBarView(
+    print('Building RemindersScreen');
+    return Consumer<LanguageManager>(
+      builder: (context, languageManager, child) {
+        return WillPopScope(
+          onWillPop: () async => false,
+          child: DefaultTabController(
+            length: 2,
+            child: Scaffold(
+              appBar: UpperAppBar(
+                showSearch: true,
+                onSearchChanged: (query) {
+                  setState(() {
+                    _searchQuery = query;
+                    print('Search query changed via app bar: $_searchQuery');
+                  });
+                },
+                showSettings: true,
+                showLeading: false,
+              ),
+              backgroundColor: Colors.white,
+              body: Column(
+                children: [
+                  TabBar(
                     controller: _tabController,
-                    children: [
-                      _buildRemindersList(false),
-                      _buildRemindersList(true),
+                    tabs: [
+                      Tab(text: localizations.unreadReminders),
+                      Tab(text: localizations.readReminders),
                     ],
+                    labelColor: Colors.black,
+                    unselectedLabelColor: Colors.black54,
+                    indicatorColor: Colors.black,
+                    labelStyle: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                ),
-              ],
-            ),
-            floatingActionButton: FloatingActionButton(
-              onPressed: () => _showSavePostModal(null),
-              backgroundColor: Colors.lightGreen,
-              child: const Icon(Icons.add, color: Colors.white),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildRemindersList(false),
+                        _buildRemindersList(true),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              floatingActionButton: FloatingActionButton(
+                onPressed: () {
+                  print('Floating action button pressed');
+                  _showSavePostModal(null);
+                },
+                backgroundColor: Colors.black,
+                shape: const CircleBorder(),
+                child: const Icon(Icons.add, color: Colors.white),
+              ),
+              bottomNavigationBar: LowerNavigationBar(
+                currentIndex: _currentNavIndex,
+              ),
             ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
-
-  // ... بقية الكود _RemindersScreenState (بدون تغيير كبير) ...
 
   Widget _buildRemindersList(bool showOpened) {
     final filteredReminders = _getFilteredReminders(showOpened);
+    print(
+        'Building reminders list for showOpened = $showOpened, filtered count: ${filteredReminders.length}');
 
     return NotificationListener<ScrollNotification>(
       onNotification: (ScrollNotification scrollInfo) {
         if (scrollInfo.metrics.pixels >=
                 scrollInfo.metrics.maxScrollExtent - 200 &&
             !_isLoadingMore) {
+          print('Scroll reached near end, triggering load more');
           _loadMoreReminders(showOpened);
         }
         return false;
@@ -382,12 +603,15 @@ class _RemindersScreenState extends State<RemindersScreen>
         children: [
           _buildFilterBar(),
           Expanded(
-            child: _isLoading
+            child: _isLoading && filteredReminders.isEmpty
                 ? const Center(
-                    child: CircularProgressIndicator(color: Colors.lightGreen))
+                    child: CircularProgressIndicator(color: Colors.black))
                 : filteredReminders.isEmpty
                     ? Center(
-                        child: Text(localizations.noUnreadReminders,
+                        child: Text(
+                            showOpened
+                                ? localizations.noReadReminders
+                                : localizations.noUnreadReminders,
                             style: const TextStyle(color: Colors.black)))
                     : ListView.builder(
                         padding: const EdgeInsets.all(8.0),
@@ -401,9 +625,11 @@ class _RemindersScreenState extends State<RemindersScreen>
                             return _isLoadingMore
                                 ? const Center(
                                     child: CircularProgressIndicator(
-                                        color: Colors.lightGreen))
+                                        color: Colors.black))
                                 : const SizedBox.shrink();
                           }
+                          print(
+                              'Building card for reminder ${filteredReminders[index].id}');
                           return _buildReminderCard(filteredReminders[index]);
                         },
                       ),
@@ -414,9 +640,16 @@ class _RemindersScreenState extends State<RemindersScreen>
   }
 
   Widget _buildFilterBar() {
+    final isArabic = Provider.of<LanguageManager>(context, listen: false)
+            .locale
+            .languageCode ==
+        'ar';
+    final allLabel = isArabic ? 'الكل' : 'All';
+    print('Building filter bar');
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: Colors.grey[200],
+      color: Colors.white,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -425,42 +658,43 @@ class _RemindersScreenState extends State<RemindersScreen>
               spacing: 8,
               runSpacing: 8,
               children: [
-                if (_selectedCategory != null && _selectedCategory != 'All')
+                if (_selectedCategory != null && _selectedCategory != allLabel)
                   Chip(
                     label: Text(_selectedCategory!,
-                        style: const TextStyle(color: Colors.white)),
-                    backgroundColor: Colors.blue,
+                        style: const TextStyle(color: Colors.black)),
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.black),
                     onDeleted: () {
                       setState(() {
                         _selectedCategory = null;
-                        _currentPage = 1;
-                        _fetchReminders();
+                        print('Category filter cleared');
                       });
                     },
                   ),
-                if (_selectedComplexity != null && _selectedComplexity != 'All')
+                if (_selectedComplexity != null &&
+                    _selectedComplexity != allLabel)
                   Chip(
                     label: Text(_selectedComplexity!,
-                        style: const TextStyle(color: Colors.white)),
-                    backgroundColor: Colors.blue,
+                        style: const TextStyle(color: Colors.black)),
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.black),
                     onDeleted: () {
                       setState(() {
                         _selectedComplexity = null;
-                        _currentPage = 1;
-                        _fetchReminders();
+                        print('Complexity filter cleared');
                       });
                     },
                   ),
-                if (_selectedDomain != null && _selectedDomain != 'All')
+                if (_selectedDomain != null && _selectedDomain != allLabel)
                   Chip(
                     label: Text(_selectedDomain!,
-                        style: const TextStyle(color: Colors.white)),
-                    backgroundColor: Colors.blue,
+                        style: const TextStyle(color: Colors.black)),
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.black),
                     onDeleted: () {
                       setState(() {
                         _selectedDomain = null;
-                        _currentPage = 1;
-                        _fetchReminders();
+                        print('Domain filter cleared');
                       });
                     },
                   ),
@@ -469,7 +703,10 @@ class _RemindersScreenState extends State<RemindersScreen>
           ),
           IconButton(
             icon: const Icon(Icons.filter_list, color: Colors.black),
-            onPressed: _showFilterDialog,
+            onPressed: () {
+              print('Filter button pressed');
+              _showFilterDialog();
+            },
           ),
         ],
       ),
@@ -477,6 +714,7 @@ class _RemindersScreenState extends State<RemindersScreen>
   }
 
   void _showFilterDialog() {
+    print('Showing filter dialog');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -492,11 +730,17 @@ class _RemindersScreenState extends State<RemindersScreen>
                 items: _categories,
                 selectedItem: _selectedCategory,
                 onSelected: (selected, item) {
+                  final isArabic =
+                      Provider.of<LanguageManager>(context, listen: false)
+                              .locale
+                              .languageCode ==
+                          'ar';
+                  final allLabel = isArabic ? 'الكل' : 'All';
                   setState(() {
-                    _selectedCategory = selected ? item : null;
-                    _currentPage = 1;
+                    _selectedCategory =
+                        (selected && item != allLabel) ? item : null;
+                    print('Category filter set to: $_selectedCategory');
                   });
-                  _fetchReminders();
                   Navigator.pop(context);
                 },
               ),
@@ -506,11 +750,17 @@ class _RemindersScreenState extends State<RemindersScreen>
                 items: _complexities,
                 selectedItem: _selectedComplexity,
                 onSelected: (selected, item) {
+                  final isArabic =
+                      Provider.of<LanguageManager>(context, listen: false)
+                              .locale
+                              .languageCode ==
+                          'ar';
+                  final allLabel = isArabic ? 'الكل' : 'All';
                   setState(() {
-                    _selectedComplexity = selected ? item : null;
-                    _currentPage = 1;
+                    _selectedComplexity =
+                        (selected && item != allLabel) ? item : null;
+                    print('Complexity filter set to: $_selectedComplexity');
                   });
-                  _fetchReminders();
                   Navigator.pop(context);
                 },
               ),
@@ -520,11 +770,17 @@ class _RemindersScreenState extends State<RemindersScreen>
                 items: _domains,
                 selectedItem: _selectedDomain,
                 onSelected: (selected, item) {
+                  final isArabic =
+                      Provider.of<LanguageManager>(context, listen: false)
+                              .locale
+                              .languageCode ==
+                          'ar';
+                  final allLabel = isArabic ? 'الكل' : 'All';
                   setState(() {
-                    _selectedDomain = selected ? item : null;
-                    _currentPage = 1;
+                    _selectedDomain =
+                        (selected && item != allLabel) ? item : null;
+                    print('Domain filter set to: $_selectedDomain');
                   });
-                  _fetchReminders();
                   Navigator.pop(context);
                 },
               ),
@@ -538,18 +794,20 @@ class _RemindersScreenState extends State<RemindersScreen>
                 _selectedCategory = null;
                 _selectedComplexity = null;
                 _selectedDomain = null;
-                _currentPage = 1;
+                print('All filters cleared');
               });
-              _fetchReminders();
               Navigator.pop(context);
             },
             child: Text(localizations.clearFilters,
-                style: const TextStyle(color: Colors.lightGreen)),
+                style: const TextStyle(color: Colors.black)),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              print('Closing filter dialog');
+              Navigator.pop(context);
+            },
             child: Text(localizations.close,
-                style: const TextStyle(color: Colors.lightGreen)),
+                style: const TextStyle(color: Colors.black)),
           ),
         ],
       ),
@@ -562,6 +820,7 @@ class _RemindersScreenState extends State<RemindersScreen>
     required String? selectedItem,
     required Function(bool, String) onSelected,
   }) {
+    print('Building filter section: $title');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -584,11 +843,12 @@ class _RemindersScreenState extends State<RemindersScreen>
                 label: Text(item, style: const TextStyle(color: Colors.black)),
                 selected: isSelected,
                 onSelected: (selected) => onSelected(selected, item),
-                backgroundColor: Colors.grey[300],
-                selectedColor: Colors.blue,
+                backgroundColor: Colors.white,
+                selectedColor: Colors.black,
                 labelStyle: TextStyle(
                     color: isSelected ? Colors.white : Colors.black,
                     fontSize: 14),
+                side: const BorderSide(color: Colors.black),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 shape: RoundedRectangleBorder(
@@ -602,12 +862,14 @@ class _RemindersScreenState extends State<RemindersScreen>
   }
 
   Widget _buildReminderCard(Reminder reminder) {
+    print('Building reminder card for ID: ${reminder.id}');
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       color: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: () async {
+          print('Reminder card tapped: ${reminder.id}');
           final reminderId = reminder.id;
           if (reminderId != null) {
             final result = await Navigator.pushNamed(context, '/reminder',
@@ -616,12 +878,15 @@ class _RemindersScreenState extends State<RemindersScreen>
               if (result['type'] == 'update') {
                 final updatedReminder = result['reminder'] as Reminder;
                 _updateReminderInList(updatedReminder);
+                setState(() {
+                  _currentPage = 1;
+                  _reminders.clear();
+                });
+                await _fetchReminders();
               } else if (result['type'] == 'delete') {
                 _deleteReminderFromList(reminderId);
               }
             }
-            _currentPage = 1;
-            await _fetchReminders();
           }
         },
         borderRadius: BorderRadius.circular(16),
@@ -633,19 +898,19 @@ class _RemindersScreenState extends State<RemindersScreen>
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(16)),
                 child: AspectRatio(
-                  aspectRatio: 1,
+                  aspectRatio: 16 / 9,
                   child: CachedNetworkImage(
                     imageUrl: reminder.imageUrl!,
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
-                      color: Colors.grey[300],
+                      color: Colors.white,
                       child: const Center(
-                          child: CircularProgressIndicator(
-                              color: Colors.lightGreen)),
+                          child:
+                              CircularProgressIndicator(color: Colors.black)),
                     ),
                     errorWidget: (context, url, error) => Container(
-                      color: Colors.grey[300],
-                      child: const Icon(Icons.error, color: Colors.red),
+                      color: Colors.white,
+                      child: const Icon(Icons.error, color: Colors.black),
                     ),
                   ),
                 ),
@@ -667,7 +932,7 @@ class _RemindersScreenState extends State<RemindersScreen>
                               color: Colors.black),
                         ),
                       ),
-                      const Icon(Icons.notifications_none, color: Colors.grey),
+                      const Icon(Icons.notifications_none, color: Colors.black),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -676,12 +941,12 @@ class _RemindersScreenState extends State<RemindersScreen>
                     Row(
                       children: [
                         const Icon(Icons.calendar_today,
-                            size: 16, color: Colors.grey),
+                            size: 16, color: Colors.black),
                         const SizedBox(width: 8),
                         Text(
                           reminder.nextReminderTime!,
-                          style:
-                              const TextStyle(color: Colors.grey, fontSize: 12),
+                          style: const TextStyle(
+                              color: Colors.black, fontSize: 12),
                         ),
                       ],
                     ),
@@ -697,16 +962,16 @@ class _RemindersScreenState extends State<RemindersScreen>
   }
 
   Widget _buildTags(Reminder reminder) {
+    print('Building tags for reminder ${reminder.id}');
     final List<Widget> tags = [];
     if (reminder.domain != null && reminder.domain!.isNotEmpty) {
-      tags.add(_buildTag(reminder.domain!, Colors.green[100]!, Colors.green));
+      tags.add(_buildTag(reminder.domain!, Colors.white, Colors.black));
     }
     if (reminder.complexity != null && reminder.complexity!.isNotEmpty) {
-      tags.add(_buildTag(reminder.complexity!, Colors.blue[100]!, Colors.blue));
+      tags.add(_buildTag(reminder.complexity!, Colors.white, Colors.black));
     }
     if (reminder.category != null && reminder.category!.isNotEmpty) {
-      tags.add(
-          _buildTag(reminder.category!, Colors.purple[100]!, Colors.purple));
+      tags.add(_buildTag(reminder.category!, Colors.white, Colors.black));
     }
     return Wrap(spacing: 8, runSpacing: 8, children: tags);
   }
@@ -715,37 +980,10 @@ class _RemindersScreenState extends State<RemindersScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-          color: backgroundColor, borderRadius: BorderRadius.circular(16)),
+          color: backgroundColor,
+          border: Border.all(color: Colors.black),
+          borderRadius: BorderRadius.circular(16)),
       child: Text(text, style: TextStyle(color: textColor, fontSize: 12)),
     );
-  }
-
-  Color getComplexityColor(String complexity) {
-    switch (complexity.toLowerCase()) {
-      case 'beginner':
-        return Colors.blue;
-      case 'intermediate':
-        return Colors.orange;
-      case 'advanced':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  Color getCategoryColor(String category) {
-    switch (category) {
-      case 'AI Basics':
-      case 'Machine Learning':
-      case 'Neural Networks':
-      case 'Deep Learning':
-        return Colors.purple;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  Color getDomainColor(String domain) {
-    return Colors.green;
   }
 }

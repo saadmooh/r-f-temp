@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:reminder/services/api_service.dart';
-import 'package:reminder/services/notification_service.dart';
-import 'package:reminder/l10n/app_localizations.dart'; // Updated import
+import 'package:flex_reminder/services/api_service.dart';
+import 'package:flex_reminder/services/notification_service.dart';
+import 'package:flex_reminder/l10n/app_localizations.dart';
 
 class SavePostScreen extends StatefulWidget {
   final String? initialUrl;
@@ -17,150 +17,251 @@ class SavePostScreen extends StatefulWidget {
 class _SavePostScreenState extends State<SavePostScreen> {
   final _formKey = GlobalKey<FormState>();
   final _urlController = TextEditingController();
-  String? _selectedImportance;
-  final List<String> _importanceOptions = [
-    'day',
-    'week',
-    'month'
-  ]; // القيم بالإنجليزية
+  String _selectedImportance = 'day';
+  final Map<String, Map<String, String>> _importanceOptions = {
+    'day': {'en': 'Day', 'ar': 'يوم'},
+    'week': {'en': 'Week', 'ar': 'أسبوع'},
+    'month': {'en': 'Month', 'ar': 'شهر'},
+  };
   bool _isLoading = false;
+  bool _isInitializing = true;
 
   final ApiService _apiService = ApiService();
   final NotificationService _notificationService = NotificationService();
 
+  late AppLocalizations _localizations;
+
+  // خريطة لربط الإزاحات الزمنية باختصارات المناطق الزمنية (بدون const)
+  static final Map<Duration, String> _timeZoneAbbreviations = {
+    Duration(hours: 1): 'CET', // التوقيت الرسمي لوسط أوروبا
+    Duration(hours: 2): 'CEST', // التوقيت الصيفي لوسط أوروبا
+    Duration(hours: 0): 'UTC', // التوقيت العالمي
+  };
+
   @override
   void initState() {
     super.initState();
-    if (widget.initialUrl != null) _urlController.text = widget.initialUrl!;
-    _initNotifications();
+    if (widget.initialUrl != null) {
+      _urlController.text = widget.initialUrl!;
+    }
+    _initServices();
+  }
+
+  Future<void> _initServices() async {
+    setState(() {
+      _isInitializing = true;
+    });
+
+    await _initNotifications();
+
+    setState(() {
+      _isInitializing = false;
+    });
   }
 
   Future<void> _initNotifications() async {
     await _notificationService.init();
+    bool permissionsGranted = await _notificationService.checkPermissions();
+    print('حالة أذونات الإشعارات: $permissionsGranted');
+    if (!permissionsGranted) {
+      bool granted = await _notificationService.requestPermissions();
+      print('تم طلب الأذونات، النتيجة: $granted');
+    }
+  }
+
+  // دالة لاستخراج اختصار المنطقة الزمنية بناءً على الإزاحة
+  String _getTimeZoneAbbreviation(DateTime dateTime) {
+    final offset = dateTime.timeZoneOffset;
+    return _timeZoneAbbreviations[offset] ?? 'Unknown';
   }
 
   Future<void> _schedulePostNotification(
-      String title, String nextReminderTime) async {
+      String title, int id, String nextReminderTime) async {
     try {
+      // تحليل nextReminderTime
       final DateTime scheduledDate = DateTime.parse(nextReminderTime);
-      await _notificationService.scheduleNotification(
-        title: AppLocalizations.of(context)!.postNotificationTitle ??
-            'Time for your post!',
-        body: AppLocalizations.of(context)!.postNotificationBody(title) ??
-            'The post "$title" is scheduled for now.',
+      final String timeZoneAbbr = _getTimeZoneAbbreviation(scheduledDate);
+      final String notificationTitle = _localizations.timeToReview(title);
+      final String notificationBody = _localizations.tapToViewDetails;
+
+      print('جدولة الإشعار الرئيسي:');
+      print('العنوان: $notificationTitle');
+      print('النص: $notificationBody');
+      print('التاريخ المجدول: $scheduledDate ($timeZoneAbbr)');
+
+      // جدولة الإشعار الرئيسي (مرئي مع صوت)
+      bool success = await _notificationService.scheduleNotification(
+        title: notificationTitle,
+        body: notificationBody,
         scheduledDate: scheduledDate,
         channelKey: 'scheduled_channel',
-        summary: AppLocalizations.of(context)!.postNotificationSummary ??
-            'Post Reminder',
+        summary: _localizations.postNotificationSummary,
         payload: {
+          'id': id.toString(),
           'url': _urlController.text,
-          'importance': _selectedImportance ?? 'day',
           'title': title,
+          'importance': _selectedImportance,
+          'nextReminderTime': scheduledDate.toIso8601String(),
         },
-        isPostNotification: true,
+        isPostNotification: false,
       );
+      print('نجاح جدولة الإشعار الرئيسي: $success');
+
+      // جدولة إشعار الفحص (صامت ومخفي) بعد ساعة من الإشعار الرئيسي
+      final DateTime checkDate = scheduledDate.add(const Duration(hours: 1));
+      final String checkTimeZoneAbbr = _getTimeZoneAbbreviation(checkDate);
+      print('جدولة إشعار الفحص:');
+      print('العنوان: إشعار الفحص');
+      print('التاريخ المجدول: $checkDate ($checkTimeZoneAbbr)');
+
+      success = await _notificationService.scheduleNotification(
+        title: 'إشعار الفحص',
+        body: 'التحقق مما إذا تم فتح التذكير.',
+        scheduledDate: checkDate,
+        channelKey: 'check_channel',
+        summary: 'فحص التذكير',
+        payload: {
+          'id': id.toString(),
+          'url': _urlController.text,
+          'title': title,
+          'importance': _selectedImportance,
+          'nextReminderTime': scheduledDate.toIso8601String(),
+          'isCheckNotification': 'true',
+        },
+        isPostNotification: false,
+      );
+      print('نجاح جدولة إشعار الفحص: $success');
     } catch (e) {
+      print('خطأ أثناء جدولة الإشعارات: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(AppLocalizations.of(context)!
-                    .errorSchedulingNotification(e.toString()) ??
-                'Error scheduling post notification: $e'),
-            backgroundColor: Colors.red),
+          content:
+              Text(_localizations.errorSchedulingNotification(e.toString())),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
 
   Future<void> _savePost() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
-    Map<String, dynamic>? result;
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
       final url = _urlController.text.trim();
-      if (url.isEmpty)
-        throw Exception(
-            AppLocalizations.of(context)!.urlRequired ?? 'URL is required');
-      if (_selectedImportance == null || _selectedImportance!.isEmpty)
-        throw Exception(AppLocalizations.of(context)!.importanceRequired ??
-            'Importance is required');
+      if (url.isEmpty) {
+        throw Exception(_localizations.urlRequired);
+      }
 
-      result = await _apiService
-          .savePost({'url': url, 'importance': _selectedImportance});
+      final importance = _selectedImportance;
+      if (importance.isEmpty) {
+        throw Exception(_localizations.importanceRequired);
+      }
+
+      Map<String, dynamic> data = {
+        'url': url,
+        'importance_en': _importanceOptions[importance]!['en'],
+        'importance_ar': _importanceOptions[importance]!['ar'],
+      };
+
+      final result = await _apiService.savePost(data);
+
       if (result['success'] == true) {
-        final nextReminderTime = result['nextReminderTime'];
         final title = result['title'] ?? 'Untitled Post';
-        if (nextReminderTime == null)
-          throw Exception(
-              AppLocalizations.of(context)!.nextReminderTimeMissing ??
-                  'Next reminder time is missing in the response');
-        if (title.isEmpty)
-          throw Exception(AppLocalizations.of(context)!.titleMissing ??
-              'Title is missing in the response');
+        final id = result['id'];
+        final nextReminderTime = result['nextReminderTime'];
 
-        await _schedulePostNotification(title, nextReminderTime);
+        if (id == null) {
+          throw Exception('معرف التذكير مفقود في استجابة الخادم');
+        }
+        if (title.isEmpty) {
+          throw Exception(_localizations.titleMissing);
+        }
+        if (nextReminderTime == null || nextReminderTime.isEmpty) {
+          throw Exception(_localizations.nextReminderTimeMissing);
+        }
 
-        final isPlaylist = result['is_playlist'] == true;
-        final belongsToPlaylist = result['video_belongs_to_playlist'] == true;
+        await _schedulePostNotification(title, id, nextReminderTime);
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              (isPlaylist || belongsToPlaylist)
-                  ? AppLocalizations.of(context)!
-                          .playlistSaved(nextReminderTime, title) ??
-                      'Playlist saved! Notification scheduled for: $nextReminderTime with title: $title'
-                  : AppLocalizations.of(context)!
-                          .postSaved(nextReminderTime, title) ??
-                      'Post saved! Notification scheduled for: $nextReminderTime with title: $title',
-            ),
+            content: Text('تم حفظ المنشور'),
             backgroundColor: Colors.lightGreen,
+            duration: const Duration(seconds: 3),
           ),
         );
 
         widget.onSave?.call();
-        Navigator.popUntil(context,
-            (route) => route.isFirst || route.settings.name == '/reminders');
+        Navigator.pop(context, true);
       } else {
-        print(result['message']);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result['message']),
+            content: Text(
+              _localizations
+                  .postSaveFailed(result['message'] ?? 'خطأ غير معروف'),
+            ),
             backgroundColor: Colors.red,
           ),
         );
       }
     } catch (error) {
+      print('خطأ أثناء حفظ المنشور: $error');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            result != null &&
-                    (result['is_playlist'] == true ||
-                        result['video_belongs_to_playlist'] == true)
-                ? AppLocalizations.of(context)!
-                        .playlistSaveError(error.toString()) ??
-                    'Error saving playlist: $error'
-                : AppLocalizations.of(context)!
-                        .postSaveError(error.toString()) ??
-                    'Error saving post: $error',
-          ),
+          content: Text(_localizations.postSaveError(error.toString())),
           backgroundColor: Colors.red,
         ),
       );
     } finally {
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final localizations = AppLocalizations.of(context)!;
+    _localizations = AppLocalizations.of(context)!;
+
+    if (_isInitializing) {
+      return Container(
+        color: Colors.white,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  Theme.of(context).primaryColor,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'جار التحميل...',
+                style: TextStyle(
+                  color: Theme.of(context).primaryColor,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return SingleChildScrollView(
       child: Padding(
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
         child: Card(
           color: Colors.white,
-          shape: RoundedRectangleBorder(
+          shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           margin: EdgeInsets.zero,
@@ -172,29 +273,40 @@ class _SavePostScreenState extends State<SavePostScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Text(
+                    _localizations.saveButton,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16.0),
                   TextFormField(
                     controller: _urlController,
                     style: const TextStyle(color: Colors.black),
                     decoration: InputDecoration(
-                      labelText: localizations.urlLabel,
+                      labelText: _localizations.urlLabel,
                       labelStyle: const TextStyle(color: Colors.grey),
                       filled: true,
                       fillColor: Colors.grey[200],
                       border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8.0),
-                          borderSide: BorderSide.none),
+                        borderRadius: BorderRadius.circular(8.0),
+                        borderSide: BorderSide.none,
+                      ),
                       focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.blue),
-                          borderRadius: BorderRadius.circular(8.0)),
+                        borderSide: const BorderSide(color: Colors.blue),
+                        borderRadius: BorderRadius.circular(8.0),
+                      ),
                       hintStyle: const TextStyle(color: Colors.grey),
                     ),
                     validator: (value) {
-                      if (value == null || value.isEmpty)
-                        return localizations.urlRequired;
+                      if (value == null || value.isEmpty) {
+                        return _localizations.urlRequired;
+                      }
                       final urlRegex = RegExp(
-                          r'^(http(s)?:\/\/.)[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)$');
-                      if (!urlRegex.hasMatch(value))
-                        return localizations.invalidUrl;
+                        r'^(http(s)?:\/\/.)[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)$',
+                      );
+                      if (!urlRegex.hasMatch(value)) {
+                        return _localizations.invalidUrl;
+                      }
                       return null;
                     },
                   ),
@@ -204,44 +316,70 @@ class _SavePostScreenState extends State<SavePostScreen> {
                     value: _selectedImportance,
                     style: const TextStyle(color: Colors.black),
                     decoration: InputDecoration(
-                      labelText: localizations.importanceLabel,
+                      labelText: _localizations.importanceLabel,
                       labelStyle: const TextStyle(color: Colors.grey),
                       filled: true,
                       fillColor: Colors.grey[200],
                       border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8.0),
-                          borderSide: BorderSide.none),
+                        borderRadius: BorderRadius.circular(8.0),
+                        borderSide: BorderSide.none,
+                      ),
                       focusedBorder: OutlineInputBorder(
-                          borderSide: BorderSide(color: Colors.blue),
-                          borderRadius: BorderRadius.circular(8.0)),
+                        borderSide: const BorderSide(color: Colors.blue),
+                        borderRadius: BorderRadius.circular(8.0),
+                      ),
                       hintStyle: const TextStyle(color: Colors.grey),
                     ),
-                    items: _importanceOptions.map((String importance) {
-                      // عرض الخيارات بالعربية في الواجهة، مع إرسال القيم بالإنجليزية
-                      final arabicImportance = _getArabicImportance(importance);
+                    items: _importanceOptions.keys.map((String importance) {
                       return DropdownMenuItem<String>(
-                        value: importance, // القيمة المرسلة (إنجليزية)
-                        child: Text(arabicImportance,
-                            style: const TextStyle(color: Colors.black)),
+                        value: importance,
+                        child: Text(
+                          _localizations.locale.languageCode == 'ar'
+                              ? _importanceOptions[importance]!['ar']!
+                              : _importanceOptions[importance]!['en']!,
+                          style: const TextStyle(color: Colors.black),
+                        ),
                       );
                     }).toList(),
-                    onChanged: (String? newValue) =>
-                        setState(() => _selectedImportance = newValue),
-                    validator: (value) => value == null || value.isEmpty
-                        ? localizations.importanceRequired
-                        : null,
+                    onChanged: (String? newValue) {
+                      setState(() {
+                        _selectedImportance = newValue!;
+                      });
+                    },
                   ),
                   const SizedBox(height: 32.0),
                   ElevatedButton(
                     onPressed: _isLoading ? null : _savePost,
                     style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.lightGreen,
-                        padding: const EdgeInsets.symmetric(vertical: 16.0)),
+                      backgroundColor: const Color(0xff030500),
+                      padding: const EdgeInsets.symmetric(vertical: 16.0),
+                    ),
                     child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : Text(localizations.saveButton,
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                          Colors.white),
+                                  strokeWidth: 3,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                'جار الحفظ...',
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            _localizations.saveButton,
                             style: const TextStyle(
-                                color: Colors.white, fontSize: 18)),
+                                color: Colors.white, fontSize: 18),
+                          ),
                   ),
                 ],
               ),
@@ -256,15 +394,5 @@ class _SavePostScreenState extends State<SavePostScreen> {
   void dispose() {
     _urlController.dispose();
     super.dispose();
-  }
-
-  // دالة لتحويل الأهمية من الإنجليزية إلى العربية لعرضها في الواجهة
-  String _getArabicImportance(String englishImportance) {
-    const Map<String, String> importanceMap = {
-      'day': 'يوم',
-      'week': 'أسبوع',
-      'month': 'شهر',
-    };
-    return importanceMap[englishImportance.toLowerCase()] ?? englishImportance;
   }
 }

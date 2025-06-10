@@ -11,6 +11,7 @@ class LanguageManager extends ChangeNotifier {
 
   Future<void> _loadLocale() async {
     final prefs = await SharedPreferences.getInstance();
+    print(prefs.getString('language_code'));
     final languageCode = prefs.getString('language_code') ?? 'en';
     _locale = Locale(languageCode);
     notifyListeners();

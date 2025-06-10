@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'app_localizations_en.dart';
+import 'app_localizations_ar.dart';
+import 'app_localizations_zh.dart'; // Import the Chinese translations
 
 class AppLocalizations {
   final Locale locale;
@@ -12,274 +15,279 @@ class AppLocalizations {
   static const LocalizationsDelegate<AppLocalizations> delegate =
       _AppLocalizationsDelegate();
 
-  // النصوص المتوفرة بناءً على اللغة مع إضافة ترجمات لمعلومات المستخدم
-  static const Map<String, Map<String, String>> _localizedValues = {
-    'en': {
-      'appTitle': 'Reminder App',
-      'searchPosts': 'Search posts...',
-      'navigationFailed': 'Navigation failed: {message}',
-      'filterPressed': 'Filter pressed',
-      'timeSlots': 'Time Slots',
-      'subscriptionManagement': 'Subscription Management',
-      'stats': 'Stats',
-      'logout': 'Logout',
-      'searchReminders': 'Search Reminders...',
-      'unexpectedError': 'An unexpected error occurred',
-      'unauthorizedError': 'Unauthorized access',
-      'remindersTitle': 'Reminders',
-      'unreadReminders': 'Unread Reminders',
-      'readReminders': 'Read Reminders',
-      'noUnreadReminders': 'No unread reminders',
-      'filters': 'Filters',
-      'categories': 'Categories',
-      'complexity': 'Complexity',
-      'domains': 'Domains',
-      'clearFilters': 'Clear Filters',
-      'close': 'Close',
-      'postNotificationTitle': 'Post Saved',
-      'postNotificationSummary': 'Post Saved Summary',
-      'urlRequired': 'URL is required',
-      'importanceRequired': 'Importance is required',
-      'nextReminderTimeMissing': 'Next reminder time is missing',
-      'titleMissing': 'Title is required',
-      'urlLabel': 'URL',
-      'invalidUrl': 'Invalid URL',
-      'importanceLabel': 'Importance',
-      'saveButton': 'Save',
-      // ترجمات جديدة لمعلومات المستخدم
-      'profileUpdate': 'Update Profile',
-      'profileUpdateSuccess': 'Profile updated successfully',
-      'profileUpdateFailed': 'Failed to update profile',
-      'uploadPhoto': 'Upload Photo',
-      'changeLanguage': 'Change Language',
-      'languageUpdated': 'Language updated successfully',
-      'languageUpdateFailed': 'Failed to update language',
-      'currentLanguage': 'Current Language',
-      'selectLanguage': 'Select Language',
-      'profileSettings': 'Profile Settings',
-      'editProfile': 'Edit Profile',
-      'saveChanges': 'Save Changes',
-      'cancel': 'Cancel',
-      // ترجمات جديدة بناءً على الأخطاء
-      'userProfile': 'User Profile',
-      'tapToChangePhoto': 'Tap to change photo',
-      'name': 'Name',
-    },
-    'ar': {
-      'appTitle': 'تطبيق التذكير',
-      'searchPosts': 'ابحث في المنشورات...',
-      'navigationFailed': 'فشل التنقل: {message}',
-      'filterPressed': 'تم الضغط على الفلتر',
-      'timeSlots': 'فترات الوقت',
-      'subscriptionManagement': 'إدارة الاشتراك',
-      'stats': 'الإحصائيات',
-      'logout': 'تسجيل الخروج',
-      'searchReminders': 'ابحث في التذكيرات...',
-      'unexpectedError': 'حدث خطأ غير متوقع',
-      'unauthorizedError': 'وصول غير مخول',
-      'remindersTitle': 'التذكيرات',
-      'unreadReminders': 'التذكيرات غير المقروءة',
-      'readReminders': 'التذكيرات المقروءة',
-      'noUnreadReminders': 'لا توجد تذكيرات غير مقروءة',
-      'filters': 'المرشحات',
-      'categories': 'الفئات',
-      'complexity': 'التعقيد',
-      'domains': 'النطاقات',
-      'clearFilters': 'مسح المرشحات',
-      'close': 'إغلاق',
-      'postNotificationTitle': 'تم حفظ المنشور',
-      'postNotificationSummary': 'ملخص حفظ المنشور',
-      'urlRequired': 'الرابط مطلوب',
-      'importanceRequired': 'الأهمية مطلوبة',
-      'nextReminderTimeMissing': 'وقت التذكير التالي مفقود',
-      'titleMissing': 'العنوان مطلوب',
-      'urlLabel': 'الرابط',
-      'invalidUrl': 'رابط غير صحيح',
-      'importanceLabel': 'الأهمية',
-      'saveButton': 'حفظ',
-      // ترجمات جديدة لمعلومات المستخدم
-      'profileUpdate': 'تحديث الملف الشخصي',
-      'profileUpdateSuccess': 'تم تحديث الملف الشخصي بنجاح',
-      'profileUpdateFailed': 'فشل تحديث الملف الشخصي',
-      'uploadPhoto': 'رفع صورة',
-      'changeLanguage': 'تغيير اللغة',
-      'languageUpdated': 'تم تحديث اللغة بنجاح',
-      'languageUpdateFailed': 'فشل تحديث اللغة',
-      'currentLanguage': 'اللغة الحالية',
-      'selectLanguage': 'اختر اللغة',
-      'profileSettings': 'إعدادات الملف الشخصي',
-      'editProfile': 'تعديل الملف الشخصي',
-      'saveChanges': 'حفظ التغييرات',
-      'cancel': 'إلغاء',
-      // ترجمات جديدة بناءً على الأخطاء
-      'userProfile': 'الملف الشخصي',
-      'tapToChangePhoto': 'اضغط لتغيير الصورة',
-      'name': 'الاسم',
-    },
-  };
+  Map<String, String> get _localizedValues {
+    switch (locale.languageCode) {
+      case 'ar':
+        return arabicTranslations;
+      case 'zh':
+        return chineseTranslations; // Add Chinese translations
+      case 'en':
+      default:
+        return englishTranslations;
+    }
+  }
 
-  // دوال الوصول إلى النصوص
-  String get appTitle =>
-      _localizedValues[locale.languageCode]?['appTitle'] ?? 'Reminder App';
-  String get searchPosts =>
-      _localizedValues[locale.languageCode]?['searchPosts'] ??
-      'Search posts...';
+  // Helper function to retrieve localized values
+  String _getValue(String key, {String defaultValue = 'Missing translation'}) {
+    return _localizedValues[key] ?? defaultValue;
+  }
+
+  // App-wide translations
+  String get appTitle => _getValue('appTitle');
+  String get searchPosts => _getValue('searchPosts');
   String navigationFailed(String message) =>
-      _localizedValues[locale.languageCode]?['navigationFailed']
-          ?.replaceFirst('{message}', message) ??
-      'Navigation failed: $message';
-  String get filterPressed =>
-      _localizedValues[locale.languageCode]?['filterPressed'] ??
-      'Filter pressed';
-  String get timeSlots =>
-      _localizedValues[locale.languageCode]?['timeSlots'] ?? 'Time Slots';
-  String get subscriptionManagement =>
-      _localizedValues[locale.languageCode]?['subscriptionManagement'] ??
-      'Subscription Management';
-  String get stats =>
-      _localizedValues[locale.languageCode]?['stats'] ?? 'Stats';
-  String get logout =>
-      _localizedValues[locale.languageCode]?['logout'] ?? 'Logout';
-  String get searchReminders =>
-      _localizedValues[locale.languageCode]?['searchReminders'] ??
-      'Search Reminders...';
-  String get unexpectedError =>
-      _localizedValues[locale.languageCode]?['unexpectedError'] ??
-      'An unexpected error occurred';
-  String get unauthorizedError =>
-      _localizedValues[locale.languageCode]?['unauthorizedError'] ??
-      'Unauthorized access';
-  String get remindersTitle =>
-      _localizedValues[locale.languageCode]?['remindersTitle'] ?? 'Reminders';
-  String get unreadReminders =>
-      _localizedValues[locale.languageCode]?['unreadReminders'] ??
-      'Unread Reminders';
-  String get readReminders =>
-      _localizedValues[locale.languageCode]?['readReminders'] ??
-      'Read Reminders';
-  String get noUnreadReminders =>
-      _localizedValues[locale.languageCode]?['noUnreadReminders'] ??
-      'No unread reminders';
-  String get filters =>
-      _localizedValues[locale.languageCode]?['filters'] ?? 'Filters';
-  String get categories =>
-      _localizedValues[locale.languageCode]?['categories'] ?? 'Categories';
-  String get complexity =>
-      _localizedValues[locale.languageCode]?['complexity'] ?? 'Complexity';
-  String get domains =>
-      _localizedValues[locale.languageCode]?['domains'] ?? 'Domains';
-  String get clearFilters =>
-      _localizedValues[locale.languageCode]?['clearFilters'] ?? 'Clear Filters';
-  String get close =>
-      _localizedValues[locale.languageCode]?['close'] ?? 'Close';
-  String get postNotificationTitle =>
-      _localizedValues[locale.languageCode]?['postNotificationTitle'] ??
-      'Post Saved';
-  String get postNotificationSummary =>
-      _localizedValues[locale.languageCode]?['postNotificationSummary'] ??
-      'Post Saved Summary';
-  String get urlRequired =>
-      _localizedValues[locale.languageCode]?['urlRequired'] ??
-      'URL is required';
-  String get importanceRequired =>
-      _localizedValues[locale.languageCode]?['importanceRequired'] ??
-      'Importance is required';
-  String get nextReminderTimeMissing =>
-      _localizedValues[locale.languageCode]?['nextReminderTimeMissing'] ??
-      'Next reminder time is missing';
-  String get titleMissing =>
-      _localizedValues[locale.languageCode]?['titleMissing'] ??
-      'Title is required';
-  String get urlLabel =>
-      _localizedValues[locale.languageCode]?['urlLabel'] ?? 'URL';
-  String get invalidUrl =>
-      _localizedValues[locale.languageCode]?['invalidUrl'] ?? 'Invalid URL';
-  String get importanceLabel =>
-      _localizedValues[locale.languageCode]?['importanceLabel'] ?? 'Importance';
-  String get saveButton =>
-      _localizedValues[locale.languageCode]?['saveButton'] ?? 'Save';
-  // دوال جديدة لمعلومات المستخدم
-  String get profileUpdate =>
-      _localizedValues[locale.languageCode]?['profileUpdate'] ??
-      'Update Profile';
-  String get profileUpdateSuccess =>
-      _localizedValues[locale.languageCode]?['profileUpdateSuccess'] ??
-      'Profile updated successfully';
-  String get profileUpdateFailed =>
-      _localizedValues[locale.languageCode]?['profileUpdateFailed'] ??
-      'Failed to update profile';
-  String get uploadPhoto =>
-      _localizedValues[locale.languageCode]?['uploadPhoto'] ?? 'Upload Photo';
-  String get changeLanguage =>
-      _localizedValues[locale.languageCode]?['changeLanguage'] ??
-      'Change Language';
-  String get languageUpdated =>
-      _localizedValues[locale.languageCode]?['languageUpdated'] ??
-      'Language updated successfully';
-  String get languageUpdateFailed =>
-      _localizedValues[locale.languageCode]?['languageUpdateFailed'] ??
-      'Failed to update language';
-  String get currentLanguage =>
-      _localizedValues[locale.languageCode]?['currentLanguage'] ??
-      'Current Language';
-  String get selectLanguage =>
-      _localizedValues[locale.languageCode]?['selectLanguage'] ??
-      'Select Language';
-  String get profileSettings =>
-      _localizedValues[locale.languageCode]?['profileSettings'] ??
-      'Profile Settings';
-  String get editProfile =>
-      _localizedValues[locale.languageCode]?['editProfile'] ?? 'Edit Profile';
-  String get saveChanges =>
-      _localizedValues[locale.languageCode]?['saveChanges'] ?? 'Save Changes';
-  String get cancel =>
-      _localizedValues[locale.languageCode]?['cancel'] ?? 'Cancel';
-  // ترجمات جديدة بناءً على الأخطاء
-  String get userProfile =>
-      _localizedValues[locale.languageCode]?['userProfile'] ?? 'User Profile';
-  String get tapToChangePhoto =>
-      _localizedValues[locale.languageCode]?['tapToChangePhoto'] ??
-      'Tap to change photo';
-  String get name => _localizedValues[locale.languageCode]?['name'] ?? 'Name';
-  String get updateProfile =>
-      _localizedValues[locale.languageCode]?['updateProfile'] ??
-      'Update Profile';
-
-  // دوال ديناميكية مع معاملات
-  String postNotificationBody(String title) =>
-      _localizedValues[locale.languageCode]?['postNotificationBody']
-          ?.replaceFirst('{title}', title) ??
-      'Your post {title} has been saved successfully';
+      _getValue('navigationFailed').replaceFirst('{message}', message);
+  String get filterPressed => _getValue('filterPressed');
+  String get timeSlots => _getValue('timeSlots');
+  String get subscriptionManagement => _getValue('subscriptionManagement');
+  String get stats => _getValue('stats');
+  String get logout => _getValue('logout');
+  String get searchReminders => _getValue('searchReminders');
+  String get unexpectedError => _getValue('unexpectedError');
+  String get unauthorizedError => _getValue('unauthorizedError');
+  String get remindersTitle => _getValue('remindersTitle');
+  String get unreadReminders => _getValue('unreadReminders');
+  String get readReminders => _getValue('readReminders');
+  String get noUnreadReminders => _getValue('noUnreadReminders');
+  String get noReadReminders => _getValue('noReadReminders');
+  String get ofRemindersOpened => _getValue('ofRemindersOpened');
+  String get openingPercentage => _getValue('openingPercentage');
+  String get filters => _getValue('filters');
+  String get categories => _getValue('categories');
+  String get complexity => _getValue('complexity');
+  String get domains => _getValue('domains');
+  String get clearFilters => _getValue('clearFilters');
+  String get close => _getValue('close');
+  String get postNotificationTitle => _getValue('postNotificationTitle');
+  String get postNotificationSummary => _getValue('postNotificationSummary');
+  String get urlRequired => _getValue('urlRequired');
+  String get importanceRequired => _getValue('importanceRequired');
+  String get nextReminderTimeMissing => _getValue('nextReminderTimeMissing');
+  String get titleMissing => _getValue('titleMissing');
+  String get urlLabel => _getValue('urlLabel');
+  String get invalidUrl => _getValue('invalidUrl');
+  String get importanceLabel => _getValue('importanceLabel');
+  String get saveButton => _getValue('saveButton');
+  String get profileUpdate => _getValue('profileUpdate');
+  String get profileUpdateSuccess => _getValue('profileUpdateSuccess');
+  String get profileUpdateFailed => _getValue('profileUpdateFailed');
+  String get uploadPhoto => _getValue('uploadPhoto');
+  String get changeLanguage => _getValue('changeLanguage');
+  String get languageUpdated => _getValue('languageUpdated');
+  String get languageUpdateFailed => _getValue('languageUpdateFailed');
+  String get currentLanguage => _getValue('currentLanguage');
+  String get selectLanguage => _getValue('selectLanguage');
+  String get profileSettings => _getValue('profileSettings');
+  String get editProfile => _getValue('editProfile');
+  String get saveChanges => _getValue('saveChanges');
+  String get cancel => _getValue('cancel');
+  String get userProfile => _getValue('userProfile');
+  String get tapToChangePhoto => _getValue('tapToChangePhoto');
+  String get name => _getValue('name');
+  String postSavedSuccess(String title, String time) =>
+      _getValue('postSavedSuccess')
+          .replaceFirst('%s', title)
+          .replaceFirst('%s', time);
+  String get engagementTimesLastWeek => _getValue('engagementTimesLastWeek');
+  String get postOpeningTrendLastWeek => _getValue('postOpeningTrendLastWeek');
+  String get recommendations => _getValue('recommendations');
+  String get optimalTimes => _getValue('optimalTimes');
+  String get noRecommendations => _getValue('noRecommendations');
+  String get noOptimalTimesAvailable => _getValue('noOptimalTimesAvailable');
+  String get oldDataNotAnalyzed => _getValue('oldDataNotAnalyzed');
+  String get unknown => _getValue('unknown');
+  String get created => _getValue('created');
+  String get opened => _getValue('opened');
+  String get yes => _getValue('yes');
+  String get no => _getValue('no');
   String errorSchedulingNotification(String error) =>
-      _localizedValues[locale.languageCode]?['errorSchedulingNotification']
-          ?.replaceFirst('{error}', error) ??
-      'Error scheduling notification: {error}';
-  String playlistSaved(DateTime nextReminderTime, String title) =>
-      _localizedValues[locale.languageCode]?['playlistSaved']
-          ?.replaceFirst('{time}', nextReminderTime.toString())
-          .replaceFirst('{title}', title) ??
-      'Playlist {title} saved successfully at {time}';
-  String postSaved(DateTime nextReminderTime, String title) =>
-      _localizedValues[locale.languageCode]?['postSaved']
-          ?.replaceFirst('{time}', nextReminderTime.toString())
-          .replaceFirst('{title}', title) ??
-      'Post {title} saved successfully at {time}';
-  String playlistSaveFailed(String error) =>
-      _localizedValues[locale.languageCode]?['playlistSaveFailed']
-          ?.replaceFirst('{error}', error) ??
-      'Failed to save playlist: {error}';
+      _getValue('errorSchedulingNotification').replaceFirst('{error}', error);
+  String get home => _getValue('home');
+  String get freeTimes => _getValue('freeTimes');
+  String get addFreeTime => _getValue('addFreeTime');
+  String get editFreeTime => _getValue('editFreeTime');
+  String get day => _getValue('day');
+  String get startTime => _getValue('startTime');
+  String get endTime => _getValue('endTime');
+  String get delete => _getValue('delete');
+  String get confirmDelete => _getValue('confirmDelete');
+  String get areYouSureDelete => _getValue('areYouSureDelete');
+  String get noFreeTimes => _getValue('noFreeTimes');
+  String get dayOff => _getValue('dayOff');
+  String errorLoadingFreeTimes(String error) =>
+      _getValue('errorLoadingFreeTimes').replaceFirst('{error}', error);
+  String errorDeletingFreeTime(String error) =>
+      _getValue('errorDeletingFreeTime').replaceFirst('{error}', error);
+  String errorUpdatingDayOff(String error) =>
+      _getValue('errorUpdatingDayOff').replaceFirst('{error}', error);
+  String get noDaysAvailable => _getValue('noDaysAvailable');
+  String get invalidTimeRange => _getValue('invalidTimeRange');
+  String get overlapDetected => _getValue('overlapDetected');
+  String overlapMessage(String count) =>
+      _getValue('overlapMessage').replaceFirst('{count}', count);
+  String get merge => _getValue('merge');
+  String updateFailed(String message) =>
+      _getValue('updateFailed').replaceFirst('{message}', message);
+  String error(String error) =>
+      _getValue('error').replaceFirst('{error}', error);
+  String get monday => _getValue('monday');
+  String get tuesday => _getValue('tuesday');
+  String get wednesday => _getValue('wednesday');
+  String get thursday => _getValue('thursday');
+  String get friday => _getValue('friday');
+  String get saturday => _getValue('saturday');
+  String get sunday => _getValue('sunday');
+  String get editReminderTitle => _getValue('editReminderTitle');
+  String get requiredField => _getValue('requiredField');
+  String get notSpecified => _getValue('notSpecified');
+  String get editImportanceButton => _getValue('editImportanceButton');
+  String get editNextReminderTimeButton =>
+      _getValue('editNextReminderTimeButton');
+  String get reminderUpdatedSuccess => _getValue('reminderUpdatedSuccess');
+  String reminderUpdateError(String error) =>
+      _getValue('reminderUpdateError').replaceFirst('%s', error);
+  String postNotificationBody(String title) =>
+      _getValue('postNotificationBody').replaceFirst('{title}', title);
   String postSaveFailed(String error) =>
-      _localizedValues[locale.languageCode]?['postSaveFailed']
-          ?.replaceFirst('{error}', error) ??
-      'Failed to save post: {error}';
-  String playlistSaveError(String error) =>
-      _localizedValues[locale.languageCode]?['playlistSaveError']
-          ?.replaceFirst('{error}', error) ??
-      'Error saving playlist: {error}';
+      _getValue('postSaveFailed').replaceFirst('{error}', error);
   String postSaveError(String error) =>
-      _localizedValues[locale.languageCode]?['postSaveError']
-          ?.replaceFirst('{error}', error) ??
-      'Error saving post: {error}';
+      _getValue('postSaveError').replaceFirst('{error}', error);
+  String get titleLabel => _getValue('titleLabel');
+  String get nextReminderTimeLabel => _getValue('nextReminderTimeLabel');
+  String get noDataAvailable => _getValue('noDataAvailable');
+  String timeToReview(String title) =>
+      _getValue('timeToReview').replaceFirst('{title}', title);
+  String get tapToViewDetails => _getValue('tapToViewDetails');
+  String get email => _getValue('email');
+  String get password => _getValue('password');
+  String get forgotPassword => _getValue('forgotPassword');
+  String get alreadyHaveAccount => _getValue('alreadyHaveAccount');
+  String get dontHaveAccount => _getValue('dontHaveAccount');
+  String get login => _getValue('login');
+  String get signUp => _getValue('signUp');
+  String get invalidEmail => _getValue('invalidEmail');
+  String get noTitle => _getValue('noTitle');
+  String get noDate => _getValue('noDate');
+  String get noReminderSet => _getValue('noReminderSet');
+  String get unableToOpenLink => _getValue('unableToOpenLink');
+  String get deleteReminder => _getValue('deleteReminder');
+  String get confirmDeleteReminder => _getValue('confirmDeleteReminder');
+  String get reminderNotProvided => _getValue('reminderNotProvided');
+  String get importancePrefix => _getValue('importancePrefix');
+  String get goTo => _getValue('goTo');
+
+  // Subscription-related translations
+  String get manageSubscription => _getValue('manageSubscription');
+  String get subscriptionStatus => _getValue('subscriptionStatus');
+  String get youAreSubscribed => _getValue('youAreSubscribed');
+  String get subscriptionPaused => _getValue('subscriptionPaused');
+  String get notSubscribed => _getValue('notSubscribed');
+  String get currentSubscription => _getValue('currentSubscription');
+  String get availablePlans => _getValue('availablePlans');
+  String get noPlansAvailable => _getValue('noPlansAvailable');
+  String get unnamedPlan => _getValue('unnamedPlan');
+  String get noDescriptionAvailable => _getValue('noDescriptionAvailable');
+  String get pausePlan => _getValue('pausePlan');
+  String get cancelPlan => _getValue('cancelPlan');
+  String get resumePlan => _getValue('resumePlan');
+  String get changePlan => _getValue('changePlan');
+  String get subscribe => _getValue('subscribe');
+  String get currentPlan => _getValue('currentPlan');
+  String get checkout => _getValue('checkout');
+  String get errorLoadingInitialData => _getValue('errorLoadingInitialData');
+  String get errorLoadingSubscriptionData =>
+      _getValue('errorLoadingSubscriptionData');
+  String get errorLoadingCustomerPortal =>
+      _getValue('errorLoadingCustomerPortal');
+  String get errorLoadingPlans => _getValue('errorLoadingPlans');
+  String get errorSubscribing => _getValue('errorSubscribing');
+  String get errorCancellingSubscription =>
+      _getValue('errorCancellingSubscription');
+  String get errorPausingSubscription => _getValue('errorPausingSubscription');
+  String get errorResumingSubscription =>
+      _getValue('errorResumingSubscription');
+  String get errorChangingSubscription =>
+      _getValue('errorChangingSubscription');
+
+  // Email verification translations
+  String get verifyYourEmail => _getValue('verifyYourEmail');
+  String get verificationCodeSent => _getValue('verificationCodeSent');
+  String get verificationCode => _getValue('verificationCode');
+  String get pleaseEnterCode => _getValue('pleaseEnterCode');
+  String get resendCode => _getValue('resendCode');
+  String get verify => _getValue('verify');
+  String get emailVerifiedSuccess => _getValue('emailVerifiedSuccess');
+  String get pleaseEnterVerificationCode =>
+      _getValue('pleaseEnterVerificationCode');
+  String get verificationCodeResent => _getValue('verificationCodeResent');
+  String get anErrorOccurred => _getValue('anErrorOccurred');
+  String get success => _getValue('success');
+  String get okay => _getValue('okay');
+
+  // Subscription related translations
+  String get subscriptionPausedSuccessfully =>
+      _getValue('subscriptionPausedSuccessfully');
+  String get subscriptionCancelledSuccessfully =>
+      _getValue('subscriptionCancelledSuccessfully');
+  String get subscriptionResumedSuccessfully =>
+      _getValue('subscriptionResumedSuccessfully');
+  String get planChangedSuccessfully => _getValue('planChangedSuccessfully');
+  String get paymentCompletedSuccessfully =>
+      _getValue('paymentCompletedSuccessfully');
+  String get noCurrentSubscription => _getValue('noCurrentSubscription');
+  String get errorPerformingAction => _getValue('errorPerformingAction');
+  String get errorLoadingPage => _getValue('errorLoadingPage');
+  String status(String status) =>
+      _getValue('status').replaceFirst('{status}', status);
+  String price(String price) =>
+      _getValue('price').replaceFirst('{price}', price);
+  String duration(String duration) =>
+      _getValue('duration').replaceFirst('{duration}', duration);
+  String advancedFeatures(String value) =>
+      _getValue('advancedFeatures').replaceFirst('{value}', value);
+  String renewsAt(String date) =>
+      _getValue('renewsAt').replaceFirst('{date}', date);
+  String restoreBy(String date) =>
+      _getValue('restoreBy').replaceFirst('{date}', date);
+  String get confirmAction => _getValue('confirmAction');
+  String confirmSubscription(String planName) =>
+      _getValue('confirmSubscription').replaceFirst('{planName}', planName);
+  String get confirm => _getValue('confirm');
+  String savePercent(String percent) =>
+      _getValue('savePercent').replaceFirst('{percent}', percent);
+  String timeRemaining(String time) =>
+      _getValue('timeRemaining').replaceFirst('{time}', time);
+  String get currentOffer => _getValue('currentOffer');
+  String get swapOffer => _getValue('swapOffer');
+  String get offerSwappedSuccessfully => _getValue('offerSwappedSuccessfully');
+  String get errorSwappingOffer => _getValue('errorSwappingOffer');
+
+  // Reset password translations
+  String get resetCodeSent => _getValue('resetCodeSent');
+  String get newResetCodeSent => _getValue('newResetCodeSent');
+  String get codeVerifiedSuccessfully => _getValue('codeVerifiedSuccessfully');
+  String get passwordUpdatedSuccessfully =>
+      _getValue('passwordUpdatedSuccessfully');
+  String get pleaseEnterResetCode => _getValue('pleaseEnterResetCode');
+  String get passwordsDoNotMatch => _getValue('passwordsDoNotMatch');
+  String get passwordMinLength => _getValue('passwordMinLength');
+  String get resetPassword => _getValue('resetPassword');
+  String get resetCode => _getValue('resetCode');
+  String get verifyCode => _getValue('verifyCode');
+  String get enterCodeSentToEmail => _getValue('enterCodeSentToEmail');
+  String get enterNewPassword => _getValue('enterNewPassword');
+  String get confirmPassword => _getValue('confirmPassword');
+  String get updatePassword => _getValue('updatePassword');
+  String get failedToSendCode => _getValue('failedToSendCode');
+  String get invalidCode => _getValue('invalidCode');
+  String get failedToUpdatePassword => _getValue('failedToUpdatePassword');
+  String get registrationSuccessful => _getValue('registrationSuccessful',
+      defaultValue:
+          'Registration successful, please check your email to activate and complete payment');
+  String get loginSuccessful =>
+      _getValue('loginSuccessful', defaultValue: 'Login successful');
+
+  // Subscription-related translations
 }
 
 class _AppLocalizationsDelegate
@@ -287,7 +295,8 @@ class _AppLocalizationsDelegate
   const _AppLocalizationsDelegate();
 
   @override
-  bool isSupported(Locale locale) => ['en', 'ar'].contains(locale.languageCode);
+  bool isSupported(Locale locale) =>
+      ['en', 'ar', 'zh'].contains(locale.languageCode); // Add 'zh' support
 
   @override
   Future<AppLocalizations> load(Locale locale) async {
