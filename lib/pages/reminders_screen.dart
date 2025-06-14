@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flex_reminder/models/reminder.dart';
@@ -117,11 +118,19 @@ class _RemindersScreenState extends State<RemindersScreen>
 
   late TabController _tabController;
   int _currentPage = 1;
-  int _perPage = 4; // عدد التذكيرات لكل دفعة
+  int _perPage = 4;
   int _totalReminders = 0;
   late AppLocalizations localizations;
 
   int _currentNavIndex = 0;
+
+  // مفاتيح التخزين المحلي
+  static const String _remindersKey = 'cached_reminders';
+  static const String _categoriesKey = 'cached_categories';
+  static const String _complexitiesKey = 'cached_complexities';
+  static const String _domainsKey = 'cached_domains';
+  static const String _totalKey = 'cached_total';
+  static const String _lastUpdateKey = 'last_update_time';
 
   @override
   void initState() {
@@ -129,7 +138,6 @@ class _RemindersScreenState extends State<RemindersScreen>
     _tabController = TabController(length: 2, vsync: this);
     _currentNavIndex = widget.initialIndex;
     _listenForShareData();
-    // تأخير قصير لضمان اكتمال بناء الشاشة قبل التحقق من حالة تسجيل الدخول
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkLoginStatus();
     });
@@ -146,12 +154,9 @@ class _RemindersScreenState extends State<RemindersScreen>
     print('Checking login status...');
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-    // إضافة تأخير قصير لضمان اكتمال تهيئة AuthProvider
     await Future.delayed(const Duration(milliseconds: 300));
 
-    // استخدام AuthProvider للتحقق من حالة المصادقة
     if (authProvider.status == AuthStatus.loading) {
-      // انتظار اكتمال تهيئة حالة المصادقة
       await authProvider.initializeAuthentication();
       await authProvider.checkTokenValidity();
     }
@@ -160,8 +165,105 @@ class _RemindersScreenState extends State<RemindersScreen>
       print('Not authenticated, redirecting to auth screen.');
       Navigator.pushReplacementNamed(context, '/auth');
     } else {
-      print('Authenticated, performing initial fetch.');
+      print('Authenticated, loading cached data first then fetching new data.');
+      await _loadCachedData();
       _fetchReminders();
+    }
+  }
+
+  // تحميل البيانات المخزنة محلياً
+  Future<void> _loadCachedData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      final cachedRemindersJson = prefs.getString(_remindersKey);
+      final cachedCategoriesJson = prefs.getString(_categoriesKey);
+      final cachedComplexitiesJson = prefs.getString(_complexitiesKey);
+      final cachedDomainsJson = prefs.getString(_domainsKey);
+      final cachedTotal = prefs.getInt(_totalKey) ?? 0;
+
+      if (cachedRemindersJson != null) {
+        final List<dynamic> remindersList = json.decode(cachedRemindersJson);
+        final List<Reminder> cachedReminders =
+            remindersList.map((json) => Reminder.fromJson(json)).toList();
+
+        if (mounted) {
+          final isArabic = Provider.of<LanguageManager>(context, listen: false)
+                  .locale
+                  .languageCode ==
+              'ar';
+          final allLabel = isArabic ? 'الكل' : 'All';
+
+          setState(() {
+            _reminders = cachedReminders;
+            _categories = cachedCategoriesJson != null
+                ? [
+                    allLabel,
+                    ...List<String>.from(json.decode(cachedCategoriesJson))
+                  ]
+                : [allLabel];
+            _complexities = cachedComplexitiesJson != null
+                ? [
+                    allLabel,
+                    ...List<String>.from(json.decode(cachedComplexitiesJson))
+                  ]
+                : [allLabel];
+            _domains = cachedDomainsJson != null
+                ? [
+                    allLabel,
+                    ...List<String>.from(json.decode(cachedDomainsJson))
+                  ]
+                : [allLabel];
+            _totalReminders = cachedTotal;
+            _isLoading = false;
+          });
+
+          print('Loaded ${cachedReminders.length} cached reminders');
+        }
+      }
+    } catch (e) {
+      print('Error loading cached data: $e');
+    }
+  }
+
+  // حفظ البيانات محلياً
+  Future<void> _saveCachedData(RemindersResponse response) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // تحويل التذكيرات إلى JSON
+      final remindersJson = json.encode(
+          response.reminders.map((reminder) => reminder.toJson()).toList());
+
+      await prefs.setString(_remindersKey, remindersJson);
+      await prefs.setString(_categoriesKey, json.encode(response.categories));
+      await prefs.setString(
+          _complexitiesKey, json.encode(response.complexities));
+      if (response.domains != null) {
+        await prefs.setString(_domainsKey, json.encode(response.domains!));
+      }
+      await prefs.setInt(_totalKey, response.total ?? 0);
+      await prefs.setInt(_lastUpdateKey, DateTime.now().millisecondsSinceEpoch);
+
+      print('Data cached successfully');
+    } catch (e) {
+      print('Error caching data: $e');
+    }
+  }
+
+  // مسح البيانات المخزنة
+  Future<void> _clearCachedData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_remindersKey);
+      await prefs.remove(_categoriesKey);
+      await prefs.remove(_complexitiesKey);
+      await prefs.remove(_domainsKey);
+      await prefs.remove(_totalKey);
+      await prefs.remove(_lastUpdateKey);
+      print('Cached data cleared');
+    } catch (e) {
+      print('Error clearing cached data: $e');
     }
   }
 
@@ -186,6 +288,22 @@ class _RemindersScreenState extends State<RemindersScreen>
         complexity: _selectedComplexity,
         domain: _selectedDomain,
       );
+
+      // التحقق من وجود تحديثات
+      final hasUpdates = response.hasUpdates ?? true;
+      final isSuccess = response.success ?? true;
+
+      if (!isSuccess || !hasUpdates) {
+        print('No updates available or request failed, using cached data');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _isLoadingMore = false;
+          });
+        }
+        return;
+      }
+
       print(
           'Reminders fetched successfully: ${response.reminders.length} items');
 
@@ -196,27 +314,52 @@ class _RemindersScreenState extends State<RemindersScreen>
             'ar';
         final allLabel = isArabic ? 'الكل' : 'All';
 
-        setState(() {
-          if (!isLoadMore) {
+        if (!isLoadMore) {
+          // حفظ البيانات الجديدة والاستبدال الكامل
+          await _saveCachedData(response);
+
+          setState(() {
             _reminders = response.reminders;
             _categories = [allLabel]..addAll(response.categories);
             _complexities = [allLabel]..addAll(response.complexities);
             _domains = [allLabel]..addAll(response.domains ?? []);
+            _totalReminders = response.total ?? 0;
+            _currentPage = 2; // الصفحة التالية
             print('Initial load: ${_reminders.length} reminders loaded');
-          } else {
+          });
+        } else {
+          // إضافة المزيد من البيانات
+          setState(() {
             _reminders.addAll(response.reminders);
+            _totalReminders = response.total ?? 0;
+            _currentPage += 1;
             print(
                 'Load more: ${_reminders.length} total reminders after adding ${response.reminders.length}');
-          }
-          _totalReminders = response.total ?? 0;
-          _currentPage += 1;
-        });
+          });
+
+          // تحديث البيانات المخزنة
+          await _saveCachedData(RemindersResponse(
+            reminders: _reminders,
+            categories: _categories.where((c) => c != allLabel).toList(),
+            complexities: _complexities.where((c) => c != allLabel).toList(),
+            domains: _domains.where((d) => d != allLabel).toList(),
+            total: _totalReminders,
+            hasUpdates: true,
+            success: true,
+          ));
+        }
 
         print('Processing current batch of reminders...');
         await _processRemindersInBatches(response.reminders);
       }
     } catch (error) {
       print('Error fetching reminders: $error');
+
+      // في حالة الخطأ، نعرض البيانات المخزنة إذا كانت متوفرة
+      if (_reminders.isEmpty) {
+        await _loadCachedData();
+      }
+
       String errorMessage =
           localizations.unexpectedError ?? 'An unexpected error occurred';
       if (error.toString().contains('Unauthorized') ||
@@ -479,6 +622,9 @@ class _RemindersScreenState extends State<RemindersScreen>
           print('Reminder ${updatedReminder.id} not found in list');
         }
       });
+
+      // تحديث البيانات المخزنة
+      _updateCachedReminder(updatedReminder);
     }
   }
 
@@ -488,6 +634,59 @@ class _RemindersScreenState extends State<RemindersScreen>
         _reminders.removeWhere((reminder) => reminder.id == id);
         print('Reminder $id deleted from list');
       });
+
+      // تحديث البيانات المخزنة
+      _deleteCachedReminder(id);
+    }
+  }
+
+  // تحديث تذكير في البيانات المخزنة
+  Future<void> _updateCachedReminder(Reminder updatedReminder) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedRemindersJson = prefs.getString(_remindersKey);
+
+      if (cachedRemindersJson != null) {
+        final List<dynamic> remindersList = json.decode(cachedRemindersJson);
+        final List<Reminder> cachedReminders =
+            remindersList.map((json) => Reminder.fromJson(json)).toList();
+
+        final index =
+            cachedReminders.indexWhere((r) => r.id == updatedReminder.id);
+        if (index != -1) {
+          cachedReminders[index] = updatedReminder;
+
+          final updatedJson = json.encode(
+              cachedReminders.map((reminder) => reminder.toJson()).toList());
+          await prefs.setString(_remindersKey, updatedJson);
+          print('Cached reminder ${updatedReminder.id} updated');
+        }
+      }
+    } catch (e) {
+      print('Error updating cached reminder: $e');
+    }
+  }
+
+  // حذف تذكير من البيانات المخزنة
+  Future<void> _deleteCachedReminder(int id) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedRemindersJson = prefs.getString(_remindersKey);
+
+      if (cachedRemindersJson != null) {
+        final List<dynamic> remindersList = json.decode(cachedRemindersJson);
+        final List<Reminder> cachedReminders =
+            remindersList.map((json) => Reminder.fromJson(json)).toList();
+
+        cachedReminders.removeWhere((r) => r.id == id);
+
+        final updatedJson = json.encode(
+            cachedReminders.map((reminder) => reminder.toJson()).toList());
+        await prefs.setString(_remindersKey, updatedJson);
+        print('Cached reminder $id deleted');
+      }
+    } catch (e) {
+      print('Error deleting cached reminder: $e');
     }
   }
 

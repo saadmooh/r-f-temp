@@ -135,18 +135,18 @@ class NotificationService {
         complexity: payload['complexity'] ?? '',
         domain: payload['domain'] ?? '',
       );
-
-      try {
-        final fetchedReminder =
-            await ApiService().getReminderById(int.parse(payload['id']!));
-        navigatorKey.currentState?.pushNamed(
-          '/reminder',
-          arguments: fetchedReminder,
-        );
-      } catch (e) {
-        print('خطأ في جلب تفاصيل التذكير: $e');
-        navigatorKey.currentState?.pushNamed('/reminder', arguments: reminder);
-      }
+      navigatorKey.currentState?.pushNamed('/reminder', arguments: reminder);
+      // try {
+      //   final fetchedReminder =
+      //       await ApiService().getReminderById(int.parse(payload['id']!));
+      //   navigatorKey.currentState?.pushNamed(
+      //     '/reminder',
+      //     arguments: fetchedReminder,
+      //   );
+      // } catch (e) {
+      //   print('خطأ في جلب تفاصيل التذكير: $e');
+      //   navigatorKey.currentState?.pushNamed('/reminder', arguments: reminder);
+      // }
     }
   }
 

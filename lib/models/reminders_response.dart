@@ -2,13 +2,15 @@
 import 'package:flex_reminder/models/reminder.dart';
 
 class RemindersResponse {
-  final List<Reminder> reminders;
-  final List<String> categories;
-  final List<String> complexities;
-  final List<String> domains; // New field for domains
-  final int? total; // Total number of reminders (nullable)
-  final int? currentPage; // Current page (nullable)
-  final int? lastPage; // Last page (nullable)
+  List<Reminder> reminders;
+  List<String> categories;
+  List<String> complexities;
+  List<String> domains;
+  int? total;
+  int? currentPage;
+  int? lastPage;
+  bool success;
+  bool hasUpdates;
 
   RemindersResponse({
     required this.reminders,
@@ -18,6 +20,8 @@ class RemindersResponse {
     this.total,
     this.currentPage,
     this.lastPage,
+    this.success = true,
+    this.hasUpdates = true,
   });
 
   factory RemindersResponse.fromJson(Map<String, dynamic> json) {
@@ -58,6 +62,8 @@ class RemindersResponse {
       total: json['total'] as int?,
       currentPage: json['current_page'] as int?,
       lastPage: json['last_page'] as int?,
+      success: json['success'] as bool? ?? true,
+      hasUpdates: json['has_updates'] as bool? ?? true,
     );
   }
 
@@ -71,6 +77,8 @@ class RemindersResponse {
       if (total != null) 'total': total,
       if (currentPage != null) 'current_page': currentPage,
       if (lastPage != null) 'last_page': lastPage,
+      'success': success,
+      'has_updates': hasUpdates,
     };
   }
 }
